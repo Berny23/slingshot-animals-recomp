@@ -1,0 +1,14 @@
+{
+    "title": "Angry Birds Seasons",
+    "version": "6.6.2 (build 6620)",
+    "package": "com.rovio.angrybirdsseasons",
+    "library": "AngryBirdsSeasonsFull",
+    "sha256": "8183b73d9e2873e0bd3c661acbfef7e6eeef40c3403916e98830f97a9e239baf",
+    "script_key": "0x6cb24",
+    "cipher_init": "0x4b17e0",
+    "cipher_free": "0x4b1828",
+    "cipher_encrypt": "0x4b1888",
+    "cipher_decrypt": "0x4b18b8",
+    "load_asset": "0xd8948",
+    "asset_prefix": "data/"
+}

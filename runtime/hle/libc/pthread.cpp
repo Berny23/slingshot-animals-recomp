@@ -64,6 +64,15 @@ int h_pthread_mutex_init(u32 m, u32 attr) {
     st32(m, attr ? ld32(attr) : 0);
     return 0;
 }
+int h_pthread_mutexattr_init(u32 a) {
+    st32(a, 0);
+    return 0;
+}
+int h_pthread_mutexattr_settype(u32 a, int type) {  // stored as the initial mutex value
+    st32(a, type == 1 ? 0x4000 : type == 2 ? 0x8000 : 0);
+    return 0;
+}
+int h_pthread_mutexattr_destroy(u32) { return 0; }
 int h_pthread_mutex_destroy(u32 m) {
     g_mutexes.erase(m);
     return 0;
@@ -102,6 +111,11 @@ int h_pthread_cond_wait(u32 c, u32 m) {
 int h_pthread_cond_timedwait_monotonic(u32 c, u32 m, u32 abstime) {
     using namespace std::chrono;
     const auto deadline = steady_clock::time_point(seconds(int32_t(ld32(abstime))) + nanoseconds(int32_t(ld32(abstime + 4))));
+    return g_conds.get(c).wait_until(g_mutexes.get(m), deadline) == std::cv_status::timeout ? ETIMEDOUT : 0;
+}
+int h_pthread_cond_timedwait(u32 c, u32 m, u32 abstime) {
+    using namespace std::chrono;
+    const auto deadline = system_clock::time_point(seconds(int32_t(ld32(abstime))) + duration_cast<system_clock::duration>(nanoseconds(int32_t(ld32(abstime + 4)))));
     return g_conds.get(c).wait_until(g_mutexes.get(m), deadline) == std::cv_status::timeout ? ETIMEDOUT : 0;
 }
 int h_pthread_condattr_init(u32 a) {
@@ -289,7 +303,8 @@ int h_pthread_setschedparam(u32, int, u32) { return 0; }
 #define REG(name) RECOMP_REGISTER_IMPORT(#name, RECOMP_HLE(h_##name))
 REG(pthread_mutex_init); REG(pthread_mutex_destroy); REG(pthread_mutex_lock); REG(pthread_mutex_trylock);
 REG(pthread_mutex_unlock); REG(pthread_cond_init); REG(pthread_cond_destroy); REG(pthread_cond_signal);
-REG(pthread_cond_broadcast); REG(pthread_cond_wait); REG(pthread_cond_timedwait_monotonic); REG(pthread_condattr_init);
+REG(pthread_mutexattr_init); REG(pthread_mutexattr_settype); REG(pthread_mutexattr_destroy);
+REG(pthread_cond_broadcast); REG(pthread_cond_wait); REG(pthread_cond_timedwait); REG(pthread_cond_timedwait_monotonic); REG(pthread_condattr_init);
 REG(pthread_condattr_destroy); REG(pthread_rwlock_init); REG(pthread_rwlock_destroy); REG(pthread_rwlock_rdlock);
 RECOMP_REGISTER_IMPORT("pthread_rwlock_wrlock", RECOMP_HLE(h_pthread_rwlock_wrlock_tracked));
 REG(pthread_rwlock_unlock); REG(pthread_key_create); REG(pthread_key_delete); REG(pthread_getspecific);

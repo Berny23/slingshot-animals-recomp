@@ -3,12 +3,15 @@
 //
 // An asset is read into guest memory when it is opened, which makes
 // AAsset_getBuffer trivial; the game's assets are small enough for that.
+// A plain script (Lua source or bytecode, from a mod or edited) is opened in the
+// engine's format, encrypted by the game itself, so every loader takes it.
 #include <cstdio>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "recomp/fusion.hpp"
 #include "recomp/hle.hpp"
 #include "recomp/memory.hpp"
 #include "recomp/runtime.hpp"
@@ -41,7 +44,9 @@ u32 h_AAssetManager_fromJava(u32, u32) { return manager(); }
 u32 h_AAssetManager_open(u32, u32 name, int) {
     const std::string n = mem::str(name);
     if (!safe_name(n)) return 0;
-    const auto bytes = vfs_read_asset(n);
+    auto bytes = vfs_read_asset(n);
+    if (bytes && n.size() > 4 && !n.compare(n.size() - 4, 4, ".lua") && is_plain_asset(*bytes))
+        if (auto encoded = encode_script(*bytes)) bytes = std::move(encoded);
     if (!bytes) {
         if (trace_enabled("assets")) std::fprintf(stderr, "assets: missing %s\n", n.c_str());
         return 0;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Data objects imported from bionic: ctype tables and the stack guard.
+// Data objects imported from bionic: ctype tables, page size and the stack guard.
 #include <cctype>
 #include <cstring>
 
@@ -46,6 +46,10 @@ void init_data() {
         st32(ptr, tab);
         register_data(upper ? "_toupper_tab_" : "_tolower_tab_", ptr);
     }
+
+    const uint32_t page_size = mem::static_alloc(4, 4);
+    st32(page_size, 4096);
+    register_data("__page_size", page_size);
 
     const uint32_t guard = mem::static_alloc(4, 4);
     st32(guard, 0x6d1a52c3u);

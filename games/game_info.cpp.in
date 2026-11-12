@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Generated from games/@GAME_ID@/game.json.
+#include "recomp/game.hpp"
+
+namespace recomp {
+
+const GameInfo game = {
+    "@GAME_ID@",
+    "@GAME_TITLE@",
+    "@GAME_PACKAGE@",
+    "@GAME_LIBRARY@",
+    "@GAME_DIR@",
+    @GAME_SCRIPT_KEY@,
+    {@GAME_CIPHER_INIT@, @GAME_CIPHER_FREE@, @GAME_CIPHER_ENCRYPT@, @GAME_CIPHER_DECRYPT@},
+    @GAME_LOAD_ASSET@,
+    @GAME_LOAD_CONFIG@,
+    "@GAME_ASSET_PREFIX@",
+    @GAME_LIBCXX@,
+    "@GAME_MAIN_SCRIPT@",
+};
+
+}  // namespace recomp

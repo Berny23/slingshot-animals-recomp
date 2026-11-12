@@ -1,14 +1,51 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Mods: every directory here is one mod; its .cpp files are built into the
-# host and register themselves with SLINGSHOT_MOD (see platform/sdl/mod.hpp).
-# common/ holds helpers shared by mods.
-# Which of them start enabled is SLINGSHOT_DEFAULT_MODS (all by default);
+# executables and register themselves with SLINGSHOT_MOD (see platform/sdl/mod.hpp).
+# A file named <game id>.cpp is built for that game only; a mod with such
+# files supports just those games, otherwise every game. common/ holds helpers
+# shared by mods.
+# Which mods start enabled is SLINGSHOT_DEFAULT_MODS (all by default);
 # --mod, --no-mod and SLINGSHOT_MODS change that at run time.
-file(GLOB mod_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*/*.cpp")
-
 find_package(SDL3 REQUIRED CONFIG)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBLZMA REQUIRED IMPORTED_TARGET liblzma)  # common/game_scripts
-add_library(slingshot_mods OBJECT ${mod_sources})
-target_include_directories(slingshot_mods PRIVATE "${CMAKE_SOURCE_DIR}/platform/sdl" "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(slingshot_mods PUBLIC PkgConfig::LIBLZMA PRIVATE SDL3::SDL3 recomp_runtime)
+
+file(GLOB game_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/games/*/game.json")
+set(game_ids "")
+foreach(f IN LISTS game_files)
+    get_filename_component(d "${f}" DIRECTORY)
+    get_filename_component(id "${d}" NAME)
+    list(APPEND game_ids "${id}")
+endforeach()
+set(SLINGSHOT_GAME_IDS "${game_ids}" CACHE INTERNAL "")
+
+# Adds the mods supporting game `id` to `target`.
+function(slingshot_add_mods target id)
+    file(GLOB mod_dirs LIST_DIRECTORIES true CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/mods/*")
+    set(sources "")
+    foreach(dir IN LISTS mod_dirs)
+        if(NOT IS_DIRECTORY "${dir}")
+            continue()
+        endif()
+        file(GLOB files CONFIGURE_DEPENDS "${dir}/*.cpp")
+        set(shared "")
+        set(own "")
+        set(for_games FALSE)
+        foreach(f IN LISTS files)
+            get_filename_component(stem "${f}" NAME_WE)
+            if(stem IN_LIST SLINGSHOT_GAME_IDS)
+                set(for_games TRUE)
+                if(stem STREQUAL id)
+                    list(APPEND own "${f}")
+                endif()
+            else()
+                list(APPEND shared "${f}")
+            endif()
+        endforeach()
+        get_filename_component(name "${dir}" NAME)
+        if(name STREQUAL "common" OR NOT for_games OR own)
+            list(APPEND sources ${shared} ${own})
+        endif()
+    endforeach()
+    target_sources(${target} PRIVATE ${sources})
+    target_include_directories(${target} PRIVATE "${CMAKE_SOURCE_DIR}/mods")
+    target_compile_definitions(${target} PRIVATE "SLINGSHOT_DEFAULT_MODS=\"${SLINGSHOT_DEFAULT_MODS_LIST}\"")
+endfunction()

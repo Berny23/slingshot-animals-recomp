@@ -11,6 +11,7 @@
 #include <ctime>
 
 #include "libc.hpp"
+#include "recomp/game.hpp"
 #include "recomp/memory.hpp"
 #include "recomp/runtime.hpp"
 
@@ -32,7 +33,7 @@ int h_dl_iterate_phdr(u32 callback, u32 data) {
     static u32 info = 0, name = 0;
     if (!info) {
         info = mem::static_alloc(16, 4);
-        name = mem::static_string("/data/app-lib/com.rovio.angrybirds/libAngryBirdsClassic.so");
+        name = mem::static_string(std::string("/data/app-lib/") + game.package + "/lib" + game.library + ".so");
     }
     st32(info, 0);  // dlpi_addr: loaded at its link address
     st32(info + 4, name);
@@ -62,7 +63,7 @@ int h_raise(int sig) {
     return 0;
 }
 
-// setjmp/longjmp. The jmp_buf (bionic: 64 words) holds the callee-saved
+// setjmp/longjmp (and sigsetjmp/siglongjmp). The jmp_buf (bionic: 64 words) holds the callee-saved
 // registers r4-r11, sp, lr and d8-d15. longjmp resumes the setjmp caller at
 // the return address through a GuestUnwind, like a C++ exception.
 int h_setjmp(CPU* c) {
@@ -132,6 +133,9 @@ RECOMP_REGISTER_IMPORT("setjmp", RECOMP_HLE(h_setjmp));
 RECOMP_REGISTER_IMPORT("longjmp", h_longjmp);
 RECOMP_REGISTER_IMPORT("_setjmp", RECOMP_HLE(h_setjmp));
 RECOMP_REGISTER_IMPORT("_longjmp", h_longjmp);
+// The signal mask is not saved: the game blocks no signals.
+RECOMP_REGISTER_IMPORT("sigsetjmp", RECOMP_HLE(h_setjmp));
+RECOMP_REGISTER_IMPORT("siglongjmp", h_longjmp);
 
 }  // namespace
 }  // namespace hle

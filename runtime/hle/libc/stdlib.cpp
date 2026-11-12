@@ -197,6 +197,7 @@ u32 h_dlsym(u32, u32 name) {
     if (trace_enabled("dl")) std::fprintf(stderr, "recomp: dlsym(%s) -> null\n", mem::str(name));
     return 0;
 }
+int h_dladdr(u32, u32) { return 0; }  // no symbol information
 
 // ---- scheduling
 int h_sched_yield() { return ::sched_yield(); }
@@ -286,7 +287,7 @@ REG(malloc); REG(calloc); REG(realloc); REG(free); REG(memalign); REG(posix_mema
 REG(__errno); REG(qsort); REG(bsearch); REG(lrand48); REG(srand48); REG(getenv); REG(abort); REG(exit);
 RECOMP_REGISTER_IMPORT("_exit", RECOMP_HLE(h_exit));
 REG(__stack_chk_fail); REG(__cxa_atexit); REG(__cxa_finalize); REG(sysconf); REG(uname); REG(getpid); REG(geteuid);
-REG(getpwuid); REG(gethostname); REG(__system_property_get); REG(getauxval); REG(dlsym); REG(dlopen); REG(dlclose); REG(dlerror); REG(sched_yield);
+REG(getpwuid); REG(gethostname); REG(__system_property_get); REG(getauxval); REG(dlsym); REG(dladdr); REG(dlopen); REG(dlclose); REG(dlerror); REG(sched_yield);
 REG(nanosleep); REG(sigaction); REG(sigprocmask); REG(socket); REG(connect); REG(bind); REG(send); REG(recv);
 REG(recvfrom); REG(getsockopt); REG(setsockopt); REG(getsockname); REG(getpeername); REG(getaddrinfo);
 REG(freeaddrinfo); REG(gai_strerror); REG(getservbyport); REG(inet_addr); REG(inet_pton); REG(inet_ntop);

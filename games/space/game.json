@@ -1,0 +1,12 @@
+{
+    "title": "Angry Birds Space HD",
+    "version": "2.2.14 (build 221400)",
+    "package": "com.rovio.angrybirdsspaceHD",
+    "library": "AngryBirdsSpace",
+    "sha256": "cc11a1e9d5d18cc04cd57a08802f03f2e5a5cd869f0e056d8ba92e695fb6b1ce",
+    "script_key": "0xbb1e0",
+    "cipher_init": "0x36bd34",
+    "cipher_free": "0x36bd7c",
+    "cipher_encrypt": "0x36bddc",
+    "cipher_decrypt": "0x36be0c"
+}

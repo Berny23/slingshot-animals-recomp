@@ -2,9 +2,10 @@
 // Guest file system view.
 //
 // The game believes it runs as an Android app. Its private directories are
-// mapped below the host data directory; everything else is invisible:
+// mapped below the host data directory of the game, <data> =
+// $XDG_DATA_HOME/slingshot-animals-recomp/<game id>; everything else is invisible:
 //
-//   /data/data/com.rovio.angrybirds/...   -> <data>/internal/...
+//   /data/data/<package>/...              -> <data>/internal/...
 //   /sdcard/..., /storage/emulated/0/...  -> <data>/external/...
 //   relative paths                        -> <data>/internal/...
 #include <cstdint>
@@ -15,8 +16,10 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "libc.hpp"
+#include "recomp/game.hpp"
 #include "recomp/vfs.hpp"
 
 namespace recomp {
@@ -26,9 +29,10 @@ std::string g_root;
 std::string g_asset_root;
 
 std::string default_root() {
-    if (const char* x = std::getenv("XDG_DATA_HOME"); x && *x) return std::string(x) + "/slingshot-animals-recomp";
-    if (const char* h = std::getenv("HOME"); h && *h) return std::string(h) + "/.local/share/slingshot-animals-recomp";
-    return "./userdata";
+    const std::string dir = std::string("/slingshot-animals-recomp/") + game.id;
+    if (const char* x = std::getenv("XDG_DATA_HOME"); x && *x) return x + dir;
+    if (const char* h = std::getenv("HOME"); h && *h) return h + std::string("/.local/share") + dir;
+    return std::string("./userdata/") + game.id;
 }
 
 bool starts_with(std::string_view s, std::string_view p) { return s.substr(0, p.size()) == p; }
@@ -66,20 +70,37 @@ std::unordered_map<std::string, VirtualFile>& virtual_files() {
     static std::unordered_map<std::string, VirtualFile> files;
     return files;
 }
+std::vector<VirtualFallback>& virtual_fallbacks() {
+    static std::vector<VirtualFallback> fallbacks;
+    return fallbacks;
+}
 }  // namespace
 void vfs_add_virtual_file(const std::string& guest_path, VirtualFile contents) {
     std::lock_guard lk(g_virtual_lock);
     virtual_files()[guest_path] = std::move(contents);
 }
+void vfs_add_virtual_fallback(VirtualFallback fallback) {
+    std::lock_guard lk(g_virtual_lock);
+    virtual_fallbacks().push_back(std::move(fallback));
+}
 std::optional<std::string> vfs_read_virtual_file(const char* guest_path) {
+    const std::string path = guest_path ? guest_path : "";
     VirtualFile contents;
+    std::vector<VirtualFallback> fallbacks;
     {
         std::lock_guard lk(g_virtual_lock);
-        auto it = virtual_files().find(guest_path ? guest_path : "");
-        if (it == virtual_files().end()) return std::nullopt;
-        contents = it->second;
+        auto it = virtual_files().find(path);
+        if (it != virtual_files().end()) contents = it->second;
+        else fallbacks = virtual_fallbacks();
     }
-    return contents();
+    if (contents) return contents();
+    if (fallbacks.empty()) return std::nullopt;
+    const std::string host = vfs_map(path.c_str());
+    std::error_code ec;
+    if (host.empty() || std::filesystem::exists(host, ec)) return std::nullopt;
+    for (const auto& fallback : fallbacks)
+        if (auto r = fallback(path)) return r;
+    return std::nullopt;
 }
 
 const std::string& vfs_root() {
@@ -99,12 +120,12 @@ std::string vfs_map(const char* guest) {
     namespace fs = std::filesystem;
     std::string_view p = guest ? guest : "";
     struct Mount {
-        std::string_view prefix;
+        std::string prefix;
         const char* dir;
     };
     static const Mount mounts[] = {
-        {"/data/data/com.rovio.angrybirds", "internal"},
-        {"/data/user/0/com.rovio.angrybirds", "internal"},
+        {game_data_dir(), "internal"},
+        {std::string("/data/user/0/") + game.package, "internal"},
         {"/sdcard", "external"},
         {"/storage/emulated/0", "external"},
         {"/mnt/sdcard", "external"},

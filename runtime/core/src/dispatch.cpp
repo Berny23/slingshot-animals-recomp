@@ -112,6 +112,9 @@ void resolve_generated_imports(void (*missing)(CPU*, const char*)) {
     size_t unresolved = 0;
     for (size_t i = 0; i < gen::import_count; ++i) {
         g_import_fns[i] = hle::find_import(gen::imports[i]);
+        // A call through the PLT to a function the library exports itself.
+        if (!g_import_fns[i])
+            if (const uint32_t own = lib_symbol(gen::imports[i])) g_import_fns[i] = lookup_function(own);
         unresolved += g_import_fns[i] == nullptr;
     }
     if (trace_enabled("imports"))
@@ -132,7 +135,13 @@ bool verify_library(const std::vector<uint8_t>& file) {
     return true;
 }
 
-void note_segment(uint32_t, uint32_t) {}
+// The first loadable segment holds the code (and the PLT).
+uint32_t g_code_begin = 0, g_code_end = 0;
+void note_segment(uint32_t vaddr, uint32_t memsz) {
+    if (g_code_end) return;
+    g_code_begin = std::max(vaddr, mem::kNullPageEnd);
+    g_code_end = vaddr + memsz;
+}
 
 void init_main_thread() {
     init_kuser_page();
@@ -196,6 +205,18 @@ GuestFunc lookup_function(uint32_t addr) {
     const gen::FuncEntry* e = gen::functions + gen::function_count;
     const gen::FuncEntry* it = std::lower_bound(b, e, a, [](const gen::FuncEntry& x, uint32_t v) { return (x.addr & ~1u) < v; });
     if (it != e && (it->addr & ~1u) == a) return it->fn;
+    // An ARM PLT stub (exception tables point at the personality routine's):
+    //   add ip, pc, #a ; add ip, ip, #b ; ldr pc, [ip, #c]!  -> the function in its GOT slot
+    if (!(addr & 3) && a >= internal::g_code_begin && a + 12 <= internal::g_code_end && (ld32(a) & 0xfffff000u) == 0xe28fc000u && (ld32(a + 4) & 0xfffff000u) == 0xe28cc000u &&
+        (ld32(a + 8) & 0xfffff000u) == 0xe5bcf000u) {
+        auto imm = [](uint32_t insn) {  // ARM modified immediate
+            const uint32_t v = insn & 0xff, rot = 2 * ((insn >> 8) & 0xf);
+            return rot ? (v >> rot) | (v << (32 - rot)) : v;
+        };
+        const uint32_t slot = a + 8 + imm(ld32(a)) + imm(ld32(a + 4)) + (ld32(a + 8) & 0xfff);
+        const uint32_t target = ld32(slot);
+        if (target && (target & ~1u) != a) return lookup_function(target);
+    }
     return nullptr;
 }
 

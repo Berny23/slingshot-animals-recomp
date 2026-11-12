@@ -24,13 +24,13 @@ using slingshot::ModContext;
 
 constexpr float kNotchFactor = 1.15f;  // finger distance change per wheel notch
 constexpr uint64_t kIdleNs = 150'000'000;
-constexpr const char* kWheelFile = "/data/data/com.rovio.angrybirds/cache/slingshot-wheel.lua";
-constexpr const char* kLevelFile = "/data/data/com.rovio.angrybirds/cache/slingshot-wheel-level.lua";
+constexpr const char* kWheelFile = "cache/slingshot-wheel.lua";
+constexpr const char* kLevelFile = "cache/slingshot-wheel-level.lua";
 
 // Runs before each update: isSafeToQuit is the first call of gamelogic.lua's update.
 constexpr const char* kLua = R"(
-local WHEEL_FILE = '/data/data/com.rovio.angrybirds/cache/slingshot-wheel.lua'
-local LEVEL_FILE = '/data/data/com.rovio.angrybirds/cache/slingshot-wheel-level.lua'
+local WHEEL_FILE = 'cache/slingshot-wheel.lua'
+local LEVEL_FILE = 'cache/slingshot-wheel-level.lua'
 local G = _G
 local function wheel()
     local root = menuManager and menuManager.menus and menuManager.menus.root

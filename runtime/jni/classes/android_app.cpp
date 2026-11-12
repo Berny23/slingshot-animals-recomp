@@ -3,6 +3,7 @@
 // (com.rovio.fusion.App) with its Context services, and com.rovio.fusion.Globals.
 #include <string>
 
+#include "recomp/game.hpp"
 #include "recomp/java.hpp"
 #include "recomp/jni.hpp"
 
@@ -10,9 +11,6 @@ namespace recomp::java {
 namespace {
 
 using namespace recomp::jni;
-
-constexpr const char* kPackage = "com.rovio.angrybirds";
-constexpr const char* kDataDir = "/data/data/com.rovio.angrybirds";
 
 Ref g_activity = 0, g_assets = 0;
 
@@ -38,7 +36,8 @@ Ref activity() {
     return g_activity;
 }
 
-std::string files_dir() { return std::string(kDataDir) + "/files"; }
+std::string files_dir() { return game_data_dir() + "/files"; }
+std::string cache_dir() { return game_data_dir() + "/cache"; }
 
 namespace {
 
@@ -47,9 +46,9 @@ RECOMP_JAVA_METHOD("com/rovio/fusion/Globals", "getActivity", "()Landroid/app/Ac
                    [](Call&) { return ref(new_local(activity())); });
 RECOMP_JAVA_METHOD("com/rovio/fusion/Globals", "getAPILevel", "()I", [](Call&) { return integer(19); });
 RECOMP_JAVA_METHOD("com/rovio/fusion/Globals", "getLibraryName", "()Ljava/lang/String;",
-                   [](Call&) { return ref(new_string("AngryBirdsClassic")); });
+                   [](Call&) { return ref(new_string(game.library)); });
 RECOMP_JAVA_METHOD("com/rovio/fusion/Globals", "getPathToFileCacheDirectory", "()Ljava/lang/String;",
-                   [](Call&) { return ref(new_string(std::string(kDataDir) + "/cache/")); });
+                   [](Call&) { return ref(new_string(cache_dir() + "/")); });
 
 // ---- android.content.Context
 RECOMP_JAVA_METHOD("android/content/Context", "getAssets", "()Landroid/content/res/AssetManager;", [](Call&) {
@@ -57,13 +56,13 @@ RECOMP_JAVA_METHOD("android/content/Context", "getAssets", "()Landroid/content/r
     return ref(new_local(g_assets));
 });
 RECOMP_JAVA_METHOD("android/content/Context", "getPackageName", "()Ljava/lang/String;",
-                   [](Call&) { return ref(new_string(kPackage)); });
+                   [](Call&) { return ref(new_string(game.package)); });
 RECOMP_JAVA_METHOD("android/content/Context", "getFilesDir", "()Ljava/io/File;",
                    [](Call&) { return ref(file(files_dir())); });
 RECOMP_JAVA_METHOD("android/content/Context", "getCacheDir", "()Ljava/io/File;",
-                   [](Call&) { return ref(file(std::string(kDataDir) + "/cache")); });
+                   [](Call&) { return ref(file(cache_dir())); });
 RECOMP_JAVA_METHOD("android/content/Context", "getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;",
-                   [](Call&) { return ref(file(std::string("/sdcard/Android/data/") + kPackage + "/files")); });
+                   [](Call&) { return ref(file(std::string("/sdcard/Android/data/") + game.package + "/files")); });
 RECOMP_JAVA_METHOD("android/content/Context", "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
                    [](Call& c) {
                        const std::string name = string_utf8(c.l(0));

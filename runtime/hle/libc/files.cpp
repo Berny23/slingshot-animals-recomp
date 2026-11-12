@@ -15,15 +15,18 @@
 #include <unistd.h>
 #include <utime.h>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "libc.hpp"
+#include "recomp/game.hpp"
 #include "recomp/memory.hpp"
 #include "recomp/runtime.hpp"
 #include "recomp/vfs.hpp"
@@ -85,15 +88,30 @@ void put_stat(u32 g, const struct stat& s) {
     st64(g + 96, uint64_t(s.st_ino));
 }
 
+// Android's alarm driver, which older devices have: the engine's clock reads the
+// elapsed time from it and only falls back to CLOCK_BOOTTIME without it.
+std::atomic<int> g_alarm_fd{-1};
+
 // ------------------------------------------------------------------ fd level
 void h_open(CPU* c) {
     ArgReader a(c);
     const u32 path = a.u32(), flags = a.u32(), mode = (flags & O_CREAT) ? a.u32() : 0;
+    if (!std::strcmp(str(path), "/dev/alarm")) {
+        const int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+        if (fd >= 0) g_alarm_fd = fd;
+        c->r[0] = u32(ret(fd));
+        return;
+    }
     std::string hp;
     if (!map_path(path, hp)) { c->r[0] = u32(-1); return; }
     c->r[0] = u32(ret(::open(hp.c_str(), host_open_flags(flags), mode)));
 }
-int h_close(int fd) { return fd <= 2 ? 0 : ret(::close(fd)); }
+int h_close(int fd) {
+    if (fd <= 2) return 0;
+    int alarm = fd;
+    g_alarm_fd.compare_exchange_strong(alarm, -1);
+    return ret(::close(fd));
+}
 int h_read(int fd, u32 buf, u32 n) { return ret(int(::read(fd, g_mem + buf, n))); }
 int h_write(int fd, u32 buf, u32 n) { return ret(int(::write(fd, g_mem + buf, n))); }
 int h_writev(int fd, u32 iov, int n) {
@@ -133,7 +151,27 @@ void h_fcntl(CPU* c) {
     }
     c->r[0] = u32(ret(r));
 }
-void h_ioctl(CPU* c) { c->r[0] = u32(fail(ENOTTY)); }
+void h_ioctl(CPU* c) {
+    ArgReader a(c);
+    const int fd = int(a.u32());
+    const u32 request = a.u32(), arg = a.u32();
+    if (::fcntl(fd, F_GETFD) < 0) {
+        c->r[0] = u32(fail(EBADF));
+        return;
+    }
+    // ANDROID_ALARM_GET_TIME(type) = _IOW('a', 4 | type << 4, struct timespec)
+    if (fd == g_alarm_fd && (request & ~0xf0u) == 0x40086104u) {
+        const u32 type = (request >> 4) & 0xf;
+        const clockid_t id = type <= 1 ? CLOCK_REALTIME : type <= 3 ? CLOCK_BOOTTIME : CLOCK_MONOTONIC;
+        timespec ts{};
+        ::clock_gettime(id, &ts);
+        st32(arg, u32(ts.tv_sec));
+        st32(arg + 4, u32(ts.tv_nsec));
+        c->r[0] = 0;
+        return;
+    }
+    c->r[0] = u32(fail(ENOTTY));
+}
 int h_poll(u32 fds, u32 n, int timeout) {
     std::vector<pollfd> p(n);
     for (u32 i = 0; i < n; ++i) {
@@ -219,9 +257,9 @@ int h_statfs(u32 path, u32 out) {
 }
 int h_pathconf(u32, int) { return 255; }
 u32 h_getcwd(u32 buf, u32 n) {
-    static const char cwd[] = "/data/data/com.rovio.angrybirds";
-    if (n < sizeof cwd) return u32(fail(ERANGE));
-    std::memcpy(g_mem + buf, cwd, sizeof cwd);
+    const std::string cwd = game_data_dir();
+    if (n < cwd.size() + 1) return u32(fail(ERANGE));
+    std::memcpy(g_mem + buf, cwd.c_str(), cwd.size() + 1);
     return buf;
 }
 int h_mkstemp(u32 tmpl) {
@@ -338,6 +376,7 @@ u32 wrap_file(FILE* f) {
 }
 
 void init_stdio() {
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);  // the game's log (Lua print) in order with stderr's
     g_sF = mem::static_alloc(3 * kFileSize, 8);
     FILE* std_files[3] = {stdin, stdout, stderr};
     for (u32 i = 0; i < 3; ++i) {
@@ -416,6 +455,7 @@ int h_getc(u32 f) { FILE_OR(f, -1) return std::getc(hf); }
 int h_ungetc(int ch, u32 f) { FILE_OR(f, -1) return std::ungetc(ch, hf); }
 u32 h_getwc(u32 f) { FILE_OR(f, 0xffffffffu) return u32(std::fgetwc(hf)); }
 u32 h_putwc(u32 ch, u32 f) { FILE_OR(f, 0xffffffffu) return u32(std::fputwc(wchar_t(ch), hf)); }
+u32 h_fputwc(u32 ch, u32 f) { return h_putwc(ch, f); }
 u32 h_ungetwc(u32 ch, u32 f) { FILE_OR(f, 0xffffffffu) return u32(std::ungetwc(wint_t(ch), hf)); }
 int h_setvbuf(u32 f, u32, int mode, u32 size) { FILE_OR(f, -1) return std::setvbuf(hf, nullptr, mode, size); }
 int h_puts(u32 s) { return std::puts(str(s)); }
@@ -473,6 +513,16 @@ void h_vsnprintf(CPU* c) {
     store(c->r[0], c->r[1], s);
     c->r[0] = u32(s.size());
 }
+void h_vasprintf(CPU* c) {
+    ArgReader va = ArgReader::from_memory(c, c->r[2]);
+    const std::string s = guest_format(str(c->r[1]), va);
+    st32(c->r[0], mem::dup_string(s));
+    c->r[0] = u32(s.size());
+}
+void h_vsscanf(CPU* c) {
+    ArgReader va = ArgReader::from_memory(c, c->r[2]);
+    c->r[0] = u32(guest_scan(str(c->r[0]), str(c->r[1]), va));
+}
 void h_sscanf(CPU* c) {
     ArgReader a(c);
     const u32 input = a.u32(), fmt = a.u32();
@@ -487,9 +537,9 @@ REG(unlink); REG(remove); REG(rename); REG(chmod); REG(utime); REG(statfs); REG(
 REG(mkstemp); REG(basename); REG(fnmatch); REG(mmap); REG(munmap); REG(opendir); REG(closedir); REG(readdir_r);
 REG(fopen); REG(fdopen); REG(freopen); REG(tmpfile); REG(fclose); REG(fread); REG(fwrite); REG(fseek); REG(fseeko);
 REG(ftell); REG(ftello); REG(fflush); REG(feof); REG(ferror); REG(fgets); REG(fputs); REG(fputc); REG(putc);
-REG(getc); REG(ungetc); REG(getwc); REG(putwc); REG(ungetwc); REG(setvbuf); REG(puts); REG(perror);
+REG(getc); REG(ungetc); REG(getwc); REG(putwc); REG(fputwc); REG(ungetwc); REG(setvbuf); REG(puts); REG(perror);
 REGRAW(printf); REGRAW(vprintf); REGRAW(fprintf); REGRAW(sprintf); REGRAW(snprintf); REGRAW(vsprintf);
-REGRAW(vsnprintf); REGRAW(sscanf);
+REGRAW(vsnprintf); REGRAW(vasprintf); REGRAW(sscanf); REGRAW(vsscanf);
 
 }  // namespace
 }  // namespace recomp::hle

@@ -30,7 +30,7 @@ namespace {
 
 using slingshot::ModContext;
 
-constexpr const char* kKeysFile = "/data/data/com.rovio.angrybirds/cache/slingshot-keys.lua";
+constexpr const char* kKeysFile = "cache/slingshot-keys.lua";
 
 // The keys the script part knows, by the name it uses.
 enum Key { kSpace, kW, kA, kS, kD, kUp, kDown, kLeft, kRight, kShift, kPlus, kMinus, kZ, kR, kP, kEnter, kKeyCount };
@@ -72,7 +72,7 @@ int key_of(const SDL_KeyboardEvent& k) {
 // The script part runs before each update: isSafeToQuit is the first call of
 // gamelogic.lua's update (the engine does not look `update` up again).
 constexpr const char* kLua = R"(
-local KEYS_FILE = '/data/data/com.rovio.angrybirds/cache/slingshot-keys.lua'
+local KEYS_FILE = 'cache/slingshot-keys.lua'
 local AIM_SPEED = 0.8    -- the rubber band's reach per second
 local FINE_AIM_SPEED = 0.1
 local PAN_SPEED = 0.8    -- screen widths per second

@@ -1,0 +1,14 @@
+{
+    "title": "Angry Birds Classic",
+    "version": "8.0.3 (build 8031)",
+    "package": "com.rovio.angrybirds",
+    "library": "AngryBirdsClassic",
+    "sha256": "ce7a5179cd00fce1f6c3c1ccf56e98dd87735ea56d814d962f0dc733b22988f3",
+    "script_key": "0x726d8",
+    "cipher_init": "0x6dac60",
+    "cipher_free": "0x6daca8",
+    "cipher_decrypt": "0x6dacfc",
+    "load_asset": "0x1313e4",
+    "load_config": "0x1319b8",
+    "load_script": "0x5ae4a4"
+}

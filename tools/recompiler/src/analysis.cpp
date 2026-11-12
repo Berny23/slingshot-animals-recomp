@@ -242,6 +242,22 @@ void Analysis::seed_entries() {
         add_entry(a, (s.value & 1) ? Mode::Thumb : Mode::Arm, "dynsym");
         if (noreturn_names_.count(s.name)) noreturn_.insert(a);
     }
+    // The unwinder's final jump when its symbol is hidden: libgcc's
+    // restore_core_regs or LLVM libunwind's Registers_arm::restoreCoreAndJumpTo
+    // (both load r0-r15 from the block at r0).
+    static const std::vector<std::vector<uint32_t>> kRestoreCoreRegs = {
+        {0xe2801034, 0xe8910038, 0xe92d0038, 0xe8900fff, 0xe89de000},
+        {0xe1a0e000, 0xe89e1fff, 0xe59ed034, 0xe59ee03c, 0xe12fff1e},
+    };
+    for (uint32_t a = image_.text_begin(); a + 20 <= image_.text_end(); a += 4)
+        for (const auto& pat : kRestoreCoreRegs) {
+            bool match = true;
+            for (size_t i = 0; i < pat.size() && match; ++i) match = image_.read32(a + 4 * uint32_t(i)) == pat[i];
+            if (!match) continue;
+            names_.emplace(a, "restore_core_regs");
+            noreturn_.insert(a);
+            add_entry(a, Mode::Arm, "unwinder");
+        }
     for (const char* sec : {".init_array", ".fini_array"}) {
         if (const Section* s = image_.section(sec))
             for (uint32_t a = s->addr; a + 4 <= s->addr + s->size; a += 4) {
@@ -584,7 +600,54 @@ bool Analysis::resolve_jump_table(Function& fn, const Insn& in, JumpTable& jt) {
         for (uint32_t i = 0; i < count; ++i) jt.targets.push_back(jt.table_addr + 4 * i);
         return true;  // table entries are real instructions (branches); analyzed as code
     }
-    return resolve_computed_jump(fn, in, jt);
+    return resolve_computed_jump(fn, in, jt) || resolve_offset_table(fn, in, jt);
+}
+
+// Clang's ARM switch without a bound in reach (the guard is in another block):
+//   add rT, pc, #k ; ... ; ldr rX, [rI, rT] ; add pc, rX, rT
+// The table of offsets from its own start follows the code; it ends where the
+// lowest case begins.
+bool Analysis::resolve_offset_table(Function& fn, const Insn& in, JumpTable& jt) {
+    if (in.id != ARM_INS_ADD || in.mode != Mode::Arm || is_cond(in) || in.arm.op_count != 3) return false;
+    const cs_arm_op *a = op(in, 1), *b = op(in, 2);
+    if (a->type != ARM_OP_REG || b->type != ARM_OP_REG || b->shift.type != ARM_SFT_INVALID) return false;
+    uint32_t table = 0;
+    bool loaded = false;
+    unsigned treg = ARM_REG_INVALID;
+    for (uint32_t p = in.addr - 4; p + 6 * 4 >= in.addr && p >= fn.range_begin; p -= 4) {
+        auto it = fn.insns.find(p);
+        if (it == fn.insns.end() || !it->second.insn) return false;
+        const Insn& x = *it->second.insn;
+        if (!loaded) {
+            // ldr rX, [rI, rT] with rX/rT the two operands of the dispatch
+            const cs_arm_op* m = op(x, 1);
+            if (x.id != ARM_INS_LDR || is_cond(x) || !m || m->type != ARM_OP_MEM || m->mem.index == ARM_REG_INVALID ||
+                x.arm.writeback || m->subtracted)
+                continue;
+            const int dst = op(x, 0)->reg;
+            if (dst == a->reg && (m->mem.base == b->reg || m->mem.index == b->reg)) treg = b->reg;
+            else if (dst == b->reg && (m->mem.base == a->reg || m->mem.index == a->reg)) treg = a->reg;
+            else return false;
+            loaded = true;
+        } else if (x.writes_reg(treg) || op_is_reg(x, 0, treg)) {
+            if (x.id != ARM_INS_ADD || !op_is_reg(x, 1, ARM_REG_PC) || op(x, 2)->type != ARM_OP_IMM) return false;
+            table = pc_of(x) + uint32_t(op(x, 2)->imm);
+            break;
+        }
+    }
+    if (!table || table < in.addr + 4 || table >= fn.range_end) return false;
+    uint32_t end = fn.range_end;
+    for (uint32_t e = table; e + 4 <= end; e += 4) {
+        const uint32_t t = table + image_.read32(e);
+        if (t & 3 || t < e + 4 || t >= fn.range_end) break;
+        jt.targets.push_back(t);
+        fn.data_words.insert(e);
+        end = std::min(end, t);
+    }
+    if (jt.targets.empty()) return false;
+    jt.kind = JumpTable::Kind::Computed;
+    jt.table_addr = table;
+    return true;
 }
 
 namespace {
@@ -739,7 +802,10 @@ bool Analysis::resolve_computed_jump(Function& fn, const Insn& in, JumpTable& jt
                     result = {Sym::Const, (pc_of(x) & ~3u) + uint32_t(op(x, 1)->imm)};
                 break;
             case ARM_INS_LSL:
-                if (x.arm.op_count == 3 && op(x, 2)->type == ARM_OP_IMM) {
+                if (x.arm.op_count == 2 && op(x, 1)->type == ARM_OP_REG && op(x, 1)->shift.type != ARM_SFT_INVALID) {
+                    // ARM "lsl rd, rm, #k": rm with a shift (Thumb "lsls rd, rm" shifts rd by rm)
+                    result = shifted(*op(x, 1), x);
+                } else if (x.arm.op_count == 3 && op(x, 2)->type == ARM_OP_IMM) {
                     Sym v = get(op(x, 1)->reg, x);
                     unsigned k = unsigned(op(x, 2)->imm);
                     if (v.kind == Sym::Idx && v.c == 0) result = {Sym::Idx, 0, v.scale << k};
@@ -990,6 +1056,26 @@ void Analysis::run() {
         auto it = seen_mode.find(e.start);
         add_entry(e.start, it != seen_mode.end() ? it->second : guess_mode(e.start),
                   it != seen_mode.end() ? "exidx-seen" : "exidx");
+    }
+    drain();
+    // Functions reached only through pointers computed at run time, sharing the
+    // exidx entry of the function before them: an ARM "push {..., lr}" in an ARM
+    // region that no decoded function covers, or an ARM "bx lr" there (an empty
+    // function, such as a do-nothing member function).
+    seen_mode.clear();
+    for (const auto& [e, fn] : functions_)
+        for (const auto& [a, info] : fn.insns) seen_mode.emplace(a, fn.mode);
+    for (size_t i = 0; i < exidx_.size(); ++i) {
+        const uint32_t begin = exidx_[i].start;
+        auto f = functions_.find(begin);
+        if (f == functions_.end() || f->second.mode != Mode::Arm) continue;
+        const uint32_t end = std::min(exidx_range_end(begin, nullptr), image_.text_end());
+        for (uint32_t a = (begin + 4) & ~3u; a + 4 <= end; a += 4)
+            if (!seen_mode.count(a) && !functions_.count(a)) {
+                const uint32_t insn = image_.read32(a);
+                if ((insn & 0xffff4000u) == 0xe92d4000u) add_entry(a, Mode::Arm, "prologue");
+                else if (insn == 0xe12fff1eu) add_entry(a, Mode::Arm, "leaf");
+            }
     }
     drain();
     for (int pass = 0; pass < 4; ++pass) {

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // <string.h>, <ctype.h>, <wchar.h>, <wctype.h> and <stdlib.h> conversions.
 #include <cctype>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
 #include <strings.h>
 
+#include "libc.hpp"
 #include "recomp/hle.hpp"
 #include "recomp/memory.hpp"
 
@@ -86,8 +88,8 @@ u32 h_strtol(u32 s, u32 endp, int base) {
     long long v = std::strtoll(str(s), &e, base);
     if (endp) st32(endp, G(e));
     // Guest long is 32-bit: saturate like the guest libc would.
-    if (v > INT32_MAX) { errno = ERANGE; v = INT32_MAX; }
-    if (v < INT32_MIN) { errno = ERANGE; v = INT32_MIN; }
+    if (v > INT32_MAX) { set_guest_errno(ERANGE); v = INT32_MAX; }
+    if (v < INT32_MIN) { set_guest_errno(ERANGE); v = INT32_MIN; }
     return u32(int32_t(v));
 }
 u32 h_strtoul(u32 s, u32 endp, int base) {
@@ -96,7 +98,7 @@ u32 h_strtoul(u32 s, u32 endp, int base) {
     if (endp) st32(endp, G(e));
     const char* p = str(s);
     while (std::isspace(uint8_t(*p))) ++p;
-    if (*p != '-' && v > UINT32_MAX) { errno = ERANGE; v = UINT32_MAX; }
+    if (*p != '-' && v > UINT32_MAX) { set_guest_errno(ERANGE); v = UINT32_MAX; }
     return u32(v);
 }
 int64_t h_strtoll(u32 s, u32 endp, int base) {
@@ -128,6 +130,7 @@ int h_toupper(int c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
 
 // ---- wide characters (guest wchar_t is 32 bits, like the host's)
 u32 h_wcslen(u32 s) { return u32(std::wcslen(W(s))); }
+int h_wcscmp(u32 a, u32 b) { return std::wcscmp(W(a), W(b)); }
 u32 h_wmemcpy(u32 d, u32 s, u32 n) { std::wmemcpy(W(d), W(s), n); return d; }
 u32 h_wmemmove(u32 d, u32 s, u32 n) { std::wmemmove(W(d), W(s), n); return d; }
 u32 h_wmemset(u32 d, u32 c, u32 n) { std::wmemset(W(d), wchar_t(c), n); return d; }
@@ -153,7 +156,7 @@ u32 h_mbrtowc(u32 pwc, u32 s, u32 n, u32) {
 }
 u32 h_wcrtomb(u32 s, u32 wc, u32) {
     if (!s) return 1;
-    if (wc > 0xff) { errno = EILSEQ; return u32(-1); }
+    if (wc > 0xff) { set_guest_errno(EILSEQ); return u32(-1); }
     g_mem[s] = uint8_t(wc);
     return 1;
 }
@@ -191,6 +194,8 @@ RECOMP_REGISTER_IMPORT("__aeabi_memcpy", RECOMP_HLE(h_aeabi_memcpy));
 RECOMP_REGISTER_IMPORT("__aeabi_memcpy4", RECOMP_HLE(h_aeabi_memcpy));
 RECOMP_REGISTER_IMPORT("__aeabi_memcpy8", RECOMP_HLE(h_aeabi_memcpy));
 RECOMP_REGISTER_IMPORT("__aeabi_memmove", RECOMP_HLE(h_aeabi_memcpy));
+RECOMP_REGISTER_IMPORT("__aeabi_memmove4", RECOMP_HLE(h_aeabi_memcpy));
+RECOMP_REGISTER_IMPORT("__aeabi_memmove8", RECOMP_HLE(h_aeabi_memcpy));
 RECOMP_REGISTER_IMPORT("__aeabi_memset", RECOMP_HLE(h_aeabi_memset));
 RECOMP_REGISTER_IMPORT("__aeabi_memset4", RECOMP_HLE(h_aeabi_memset));
 RECOMP_REGISTER_IMPORT("__aeabi_memset8", RECOMP_HLE(h_aeabi_memset));
@@ -204,7 +209,7 @@ REG(strcasecmp); REG(strncasecmp); REG(strcoll); REG(strxfrm); REG(strchr); REG(
 REG(strpbrk); REG(strspn); REG(strcspn); REG(strdup); REG(strtok_r); REG(strerror); REG(strerror_r);
 REG(atoi); REG(atol); REG(strtol); REG(strtoul); REG(strtoll); REG(strtoull); REG(strtod);
 REG(isspace); REG(isupper); REG(isxdigit); REG(isdigit); REG(tolower); REG(toupper);
-REG(wcslen); REG(wmemcpy); REG(wmemmove); REG(wmemset); REG(wmemcmp); REG(wmemchr); REG(wcscoll); REG(wcsxfrm);
+REG(wcslen); REG(wcscmp); REG(wmemcpy); REG(wmemmove); REG(wmemset); REG(wmemcmp); REG(wmemchr); REG(wcscoll); REG(wcsxfrm);
 REG(towlower); REG(towupper); REG(btowc); REG(wctob); REG(mbrtowc); REG(wcrtomb); REG(wctype); REG(iswctype);
 
 }  // namespace

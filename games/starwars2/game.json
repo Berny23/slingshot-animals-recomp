@@ -1,0 +1,13 @@
+{
+    "title": "Angry Birds Star Wars II",
+    "version": "1.9.25 (build 192500)",
+    "package": "com.rovio.angrybirdsstarwarsii.ads",
+    "library": "AngryBirdsStarWarsII",
+    "sha256": "b7152ac92f260e0d41fa7edd7045e40c0269dec070fef111247a181c6f02737d",
+    "script_key": "0x4e6ac",
+    "cipher_init": "0x434058",
+    "cipher_free": "0x4340a0",
+    "cipher_encrypt": "0x434100",
+    "cipher_decrypt": "0x434130",
+    "main_script": "data/scripts_common/gamelogic.lua"
+}

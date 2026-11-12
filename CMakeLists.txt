@@ -9,35 +9,36 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
-# The user supplies the original APK; nothing from it is part of this repository.
-set(GAME_APK "" CACHE FILEPATH "Path to the original APK (armeabi-v7a build 8.0.3)")
-set(GAME_DIR "${CMAKE_BINARY_DIR}/game" CACHE PATH "Where the APK's library and assets are extracted")
-option(SLINGSHOT_MODS "Build the mods in mods/ into the host" ON)
+# The user supplies the original APKs; nothing from them is part of this repository.
+set(GAME_APKS "" CACHE STRING "APKs of the supported games (games/*/game.json), separated by ;")
+set(GAME_ROOT "${CMAKE_BINARY_DIR}/games" CACHE PATH "Where the APKs' libraries and assets are extracted (<root>/<game id>)")
+option(SLINGSHOT_MODS "Build the mods in mods/ into the executables" ON)
 set(SLINGSHOT_DEFAULT_MODS "all" CACHE STRING
-    "Mods enabled when the game is started without --mod or SLINGSHOT_MODS: all, none, or a list such as hide-dead-services;offline-shop")
+    "Mods enabled when a game is started without --mod or SLINGSHOT_MODS: all, none, or a list such as hide-dead-services;offline-shop")
 
 add_subdirectory(tools/recompiler)
 
-set(GAME_LIB "${GAME_DIR}/lib/libAngryBirdsClassic.so")
-if(GAME_APK AND NOT EXISTS "${GAME_LIB}")
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
-    message(STATUS "Extracting ${GAME_APK}")
-    execute_process(
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scripts/extract_apk.py" "${GAME_APK}" "${GAME_DIR}"
-        RESULT_VARIABLE extract_result)
-    if(NOT extract_result EQUAL 0)
-        message(FATAL_ERROR "APK extraction failed")
+# Extract each APK once (a stamp per APK path).
+foreach(apk IN LISTS GAME_APKS)
+    string(MD5 key "${apk}")
+    set(stamp "${GAME_ROOT}/.extracted-${key}")
+    if(NOT EXISTS "${stamp}")
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        message(STATUS "Extracting ${apk}")
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scripts/extract_apk.py"
+                    "${CMAKE_SOURCE_DIR}/games" "${GAME_ROOT}" "${apk}"
+            RESULT_VARIABLE extract_result)
+        if(NOT extract_result EQUAL 0)
+            message(FATAL_ERROR "APK extraction failed: ${apk}")
+        endif()
+        file(WRITE "${stamp}" "${apk}\n")
     endif()
-endif()
+endforeach()
 
 add_subdirectory(runtime)
-
-if(EXISTS "${GAME_LIB}")
-    add_subdirectory(game)
-    if(SLINGSHOT_MODS)
-        add_subdirectory(mods)
-    endif()
-    add_subdirectory(platform/sdl)
-else()
-    message(WARNING "No game library found: configure with -DGAME_APK=/path/to/game.apk to build the game.")
+add_subdirectory(platform/sdl)
+if(SLINGSHOT_MODS)
+    add_subdirectory(mods)
 endif()
+add_subdirectory(games)

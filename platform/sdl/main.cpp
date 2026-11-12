@@ -2,9 +2,9 @@
 // SDL3 platform host: window, GLES2 context and the Android app lifecycle
 // (what GLSurfaceView, NativeApplication and its Updater do on Android).
 //
-// Usage: slingshot [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods]
-//                  [--locale <ll_CC>] [--dump-scripts <dir>] [game-dir]
-//   game-dir holds lib/ and assets/ from the APK. The mods enabled are the
+// Usage: slingshot-<game> [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods]
+//                         [--locale <ll_CC>] [--dump-scripts <dir>] [game-dir]
+//   game-dir holds lib/ and assets/ from the APK (default: where the build extracted it). The mods enabled are the
 //   build's default ones (SLINGSHOT_DEFAULT_MODS), or instead those given with
 //   --mod or SLINGSHOT_MODS=name,name ("all" for every mod); --no-mod takes one
 //   away, --no-mods all of them. The device locale is --locale, else
@@ -25,6 +25,7 @@
 #include "font_provider.hpp"
 #include "mod.hpp"
 #include "recomp/fusion.hpp"
+#include "recomp/game.hpp"
 #include "recomp/gles.hpp"
 #include "recomp/java.hpp"
 #include "recomp/jni.hpp"
@@ -34,10 +35,6 @@
 #include "sdl_input.hpp"
 #include "test_script.hpp"
 #include "watchdog.hpp"
-
-#ifndef GAME_DIR_DEFAULT
-#define GAME_DIR_DEFAULT "."
-#endif
 
 namespace {
 
@@ -105,7 +102,7 @@ struct NativeApp {
 void* gl_loader(const char* name) { return reinterpret_cast<void*>(SDL_GL_GetProcAddress(name)); }
 
 struct Options {
-    std::string game_dir = GAME_DIR_DEFAULT;
+    std::string game_dir = recomp::game.game_dir;
     std::vector<std::string> mods;
     std::string locale;
     std::string dump_dir;  // --dump-scripts
@@ -122,14 +119,17 @@ std::string host_locale() {
 #define SLINGSHOT_DEFAULT_MODS ""  // built without mods
 #endif
 
-// Appends the mods of a "name,name" list; "all" stands for every mod.
-void add_mods(const std::string& list, std::vector<std::string>& mods) {
+// Appends the mods of a "name,name" list; "all" stands for every mod. With
+// `known_only`, names of mods this game does not have are skipped.
+void add_mods(const std::string& list, std::vector<std::string>& mods, bool known_only = false) {
     std::stringstream ss(list);
     for (std::string m; std::getline(ss, m, ',');) {
         if (m == "all") {
             for (const auto& info : slingshot::available_mods()) mods.push_back(info.name);
         } else if (!m.empty()) {
-            mods.push_back(m);
+            bool known = !known_only;
+            for (const auto& info : slingshot::available_mods()) known |= m == info.name;
+            if (known) mods.push_back(m);
         }
     }
 }
@@ -142,7 +142,7 @@ void list_mods() {
         return;
     }
     std::vector<std::string> defaults;
-    add_mods(SLINGSHOT_DEFAULT_MODS, defaults);
+    add_mods(SLINGSHOT_DEFAULT_MODS, defaults, true);
     std::printf("Mods built into this executable (* = enabled by default):\n");
     for (const auto& m : mods) {
         bool on = false;
@@ -187,7 +187,7 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
             opt.game_dir = argv[i];
         }
     }
-    if (!any_chosen) add_mods(SLINGSHOT_DEFAULT_MODS, chosen);
+    if (!any_chosen) add_mods(SLINGSHOT_DEFAULT_MODS, chosen, true);
     for (const std::string& r : removed) {
         bool known = false;
         for (const auto& info : slingshot::available_mods()) known |= r == info.name;
@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    SDL_Window* window = SDL_CreateWindow("Slingshot Animals (recompiled)", 1280, 720,
+    SDL_Window* window = SDL_CreateWindow(recomp::game.title, 1280, 720,
                                           SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) {
         std::fprintf(stderr, "host: cannot create window: %s\n", SDL_GetError());
@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
     slingshot::FontconfigProvider fonts;
     recomp::java::set_font_provider(&fonts);
 
-    if (!recomp::runtime_init(opt.game_dir + "/lib/libAngryBirdsClassic.so")) return 1;
+    if (!recomp::runtime_init(opt.game_dir + "/lib/lib" + recomp::game.library + ".so")) return 1;
     recomp::run_constructors();
     if (const uint32_t onload = recomp::lib_symbol("JNI_OnLoad")) {
         jni::NativeFrame frame;

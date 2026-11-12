@@ -4,10 +4,16 @@
 //   abrecomp report <lib.so>             analysis statistics
 //   abrecomp disasm <lib.so> <addr>      dump one recovered function
 //   abrecomp emit   <lib.so> <out_dir>   generate C++ sources
+//   abrecomp match  <lib.so> <addr>... -- <other.so>
+//                                        functions of other.so most similar to the given ones
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "analysis.hpp"
 #include "disasm.hpp"
@@ -156,11 +162,64 @@ int cmd_xref(Analysis& an, uint32_t target) {
     return 0;
 }
 
+// One token per instruction: its name, and for calls the callee's symbol name.
+std::vector<std::string> tokens(const Analysis& an, const Function& fn) {
+    std::vector<std::string> t;
+    for (const auto& [a, info] : fn.insns) {
+        std::string k = info.insn ? info.insn->name : "?";
+        if (info.flow == Flow::Call || info.flow == Flow::TailCall) k += ":" + an.name_of(info.target);
+        t.push_back(std::move(k));
+    }
+    return t;
+}
+
+// Longest common subsequence of the token sequences, relative to the longer one.
+double similarity(const std::vector<std::string>& a, const std::vector<std::string>& b) {
+    if (a.empty() || b.empty()) return 0;
+    std::vector<int> prev(b.size() + 1), cur(b.size() + 1);
+    for (const auto& x : a) {
+        for (size_t j = 0; j < b.size(); ++j) cur[j + 1] = x == b[j] ? prev[j] + 1 : std::max(prev[j + 1], cur[j]);
+        std::swap(prev, cur);
+    }
+    return double(prev[b.size()]) / double(std::max(a.size(), b.size()));
+}
+
+int cmd_match(Analysis& an, const std::vector<uint32_t>& addrs, const char* other_path) {
+    std::string err;
+    auto other = ElfImage::load(other_path, err);
+    if (!other) {
+        std::fprintf(stderr, "error: %s\n", err.c_str());
+        return 1;
+    }
+    Disassembler other_dis(*other);
+    Analysis other_an(*other, other_dis);
+    other_an.run();
+    for (uint32_t addr : addrs) {
+        auto it = an.functions().find(addr & ~1u);
+        if (it == an.functions().end()) {
+            std::fprintf(stderr, "no function at 0x%x\n", addr);
+            continue;
+        }
+        const auto want = tokens(an, it->second);
+        std::multimap<double, uint32_t, std::greater<>> best;
+        for (const auto& [e, fn] : other_an.functions()) {
+            const size_t n = fn.insns.size();
+            if (n * 10 < want.size() * 6 || n * 6 > want.size() * 10) continue;
+            best.emplace(similarity(want, tokens(other_an, fn)), e | (fn.mode == Mode::Thumb ? 1u : 0u));
+            if (best.size() > 3) best.erase(std::prev(best.end()));
+        }
+        std::printf("0x%x (%zu insns):", addr, want.size());
+        for (auto& [score, e] : best) std::printf(" 0x%x %.2f", e, score);
+        std::printf("\n");
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: %s report|disasm|emit <lib.so> [args]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s report|disasm|emit|match <lib.so> [args]\n", argv[0]);
         return 2;
     }
     const std::string cmd = argv[1];
@@ -211,6 +270,12 @@ int main(int argc, char** argv) {
         for (auto& [m, n] : st.unimplemented_by_mnemonic) top.emplace(n, m);
         for (auto& [n, m] : top) std::printf("  unimplemented %-12s %zu\n", m.c_str(), n);
         return 0;
+    }
+    if (cmd == "match" && argc >= 5) {
+        std::vector<uint32_t> addrs;
+        int i = 3;
+        for (; i < argc && std::strcmp(argv[i], "--"); ++i) addrs.push_back(uint32_t(std::strtoul(argv[i], nullptr, 0)));
+        if (i + 1 < argc) return cmd_match(an, addrs, argv[i + 1]);
     }
     if (cmd == "xref" && argc >= 4) return cmd_xref(an, uint32_t(std::strtoul(argv[3], nullptr, 0)));
     std::fprintf(stderr, "unknown command\n");

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Support for the guest's C++ exception handling.
 //
-// The game's own unwinder (libgcc's ARM EHABI implementation) is recompiled
-// and works on the guest stack as usual. Its last step, restore_core_regs,
-// loads all registers and jumps into a landing pad; that jump is replaced by
-// a GuestUnwind exception that the generated function owning the target frame
+// The game's own unwinder (libgcc's or LLVM libunwind's ARM EHABI
+// implementation) is recompiled and works on the guest stack as usual. Its last
+// step (restore_core_regs, Registers_arm::restoreCoreAndJumpTo) loads all
+// registers and jumps into a landing pad; that jump is replaced by a
+// GuestUnwind exception that the generated function owning the target frame
 // catches (see the emitter).
 #include <cstdio>
 #include <cstring>

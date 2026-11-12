@@ -1,0 +1,13 @@
+{
+    "title": "Angry Birds Star Wars HD",
+    "version": "1.5.13 (build 151300)",
+    "package": "com.rovio.angrybirdsstarwarshd.premium.iap",
+    "library": "AngryBirdsStarWars",
+    "sha256": "10c050d8b53a89290058ad1dc79e98169e423f6dae852e2998cb9eb9be9b5b2c",
+    "script_key": "0x419e4",
+    "cipher_init": "0x417404",
+    "cipher_free": "0x41744c",
+    "cipher_encrypt": "0x4174ac",
+    "cipher_decrypt": "0x4174dc",
+    "main_script": "data/scripts_common/gamelogic.lua"
+}

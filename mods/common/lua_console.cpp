@@ -8,6 +8,7 @@
 
 #include "common/game_scripts.hpp"
 #include "lua_console.hpp"
+#include "recomp/game.hpp"
 
 namespace {
 
@@ -29,6 +30,7 @@ local function dump(v, depth, indent)
     return G.table.concat(out, '\n')
 end
 G.dump = dump
+local log = native and native.logError or G.rawget(G, 'logError') or G.print  -- to the log
 -- The file is `return <number>, function() <code> end`; each number runs once
 -- (this Lua has no io library and no os.remove: the host deletes the file).
 local env = G.getfenv(1)  -- the game's globals (gamelogic.lua's environment), then _G
@@ -38,7 +40,7 @@ local function poll()
     if not chunk then
         -- No file (most frames), or code that does not compile (reported once).
         if not err:find('cannot open', 1, true) and err ~= last_error then
-            native.logError('lua error: ' .. err)
+            log('lua error: ' .. err)
         end
         last_error = err
         return
@@ -47,7 +49,7 @@ local function poll()
     local ok, number, fn = G.pcall(chunk)
     if not ok then
         last = nil
-        native.logError('lua error: ' .. G.tostring(number))
+        log('lua error: ' .. G.tostring(number))
         return
     end
     if number == last then return end
@@ -58,18 +60,25 @@ local function poll()
     if results[1] then
         local text = {}
         for i = 2, G.math.max(2, results.n) do text[#text + 1] = dump(results[i]) end
-        native.logError('lua: ' .. G.table.concat(text, ', '))
+        log('lua: ' .. G.table.concat(text, ', '))
     else
-        native.logError('lua error: ' .. G.tostring(results[2]))
+        log('lua error: ' .. G.tostring(results[2]))
     end
 end
--- Polled from isSafeToQuit, the first thing the game's update (gamelogic.lua)
--- calls on every frame (the engine does not look `update` itself up again).
-local is_safe_to_quit = isSafeToQuit
-function isSafeToQuit(...)
+local function safe_poll()
     local ok, err = G.pcall(poll)
-    if not ok then native.logError('lua error: ' .. G.tostring(err)) end
-    return is_safe_to_quit(...)
+    if not ok then log('lua error: ' .. G.tostring(err)) end
+end
+-- Polled from update and from isSafeToQuit, which Classic's update (gamelogic.lua)
+-- calls first on every frame (that engine does not look `update` itself up again).
+for _, name in G.ipairs({'update', 'isSafeToQuit'}) do
+    local original = env[name]
+    if original then
+        env[name] = function(...)
+            safe_poll()
+            return original(...)
+        end
+    end
 end
 )";
 }
@@ -77,7 +86,7 @@ end
 const bool registered = [] {
     const char* control = std::getenv("SLINGSHOT_CONTROL");
     if (!control) return false;
-    slingshot::mods::append_lua("data/scripts/gamelogic.lua", console_lua());
+    slingshot::mods::append_lua(recomp::game.main_script, console_lua());
     return true;
 }();
 

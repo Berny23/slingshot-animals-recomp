@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Lua patches for the game's scripts (assets data/scripts/*.lua).
+// Lua patches for the game's scripts (assets data/**/*.lua).
 //
-// A patched script is served as plain Lua source (the engine's loaders take plain
-// files, see runtime/hle/fusion/script_loader.cpp). It runs the original chunk, which
-// is decrypted by the game's own code, in the environment the engine
-// loads the script into, and then the mods' code. That code looks names up in that
+// A patched script is served as Lua source, which every game takes (see
+// runtime/hle/android/asset_manager.cpp). It runs the original chunk, decrypted by
+// the game's own code, in the environment the engine loads the script into, and
+// then the mods' code. That code looks names up in that
 // environment first and in _G after it, and what it defines goes into the environment.
 //
 //     slingshot::mods::append_lua("data/scripts/menus/main_menu.lua", R"(

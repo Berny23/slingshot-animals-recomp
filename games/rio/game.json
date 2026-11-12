@@ -1,0 +1,13 @@
+{
+    "title": "Angry Birds Rio",
+    "version": "2.6.13 (build 2676)",
+    "package": "com.rovio.angrybirdsrio",
+    "library": "AngryBirdsRio",
+    "sha256": "980fad194cc6aefa56b4860965cefcf1de83dbb84c4d06a56c219327fe06486b",
+    "stl": "libc++",
+    "script_key": "0xb9d2c",
+    "cipher_init": "0x2fbacc",
+    "cipher_free": "0x2fc028",
+    "cipher_encrypt": "0x2fc404",
+    "cipher_decrypt": "0x2fc420"
+}

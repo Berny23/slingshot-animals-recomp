@@ -14,8 +14,9 @@ namespace recomp::java {
 
 // The game's Activity (com.rovio.fusion.App), created on first use.
 jni::Ref activity();
-// Guest path of the app's private files directory (Context.getFilesDir()).
+// Guest paths of the app's private directories (Context.getFilesDir(), getCacheDir()).
 std::string files_dir();
+std::string cache_dir();
 
 // Display reported to the game (DeviceInfoWrapper); set by the platform layer.
 struct Display {

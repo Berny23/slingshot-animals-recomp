@@ -33,7 +33,11 @@ std::optional<std::vector<uint8_t>> vfs_read_asset(const std::string& name);
 // the host to pass state to game scripts, which read it with loadfile.
 using VirtualFile = std::function<std::string()>;
 void vfs_add_virtual_file(const std::string& guest_path, VirtualFile contents);
-// The contents of the virtual file at `guest_path`, or nullopt if there is none.
+// Stand-ins for missing files: when the game opens a visible guest path for reading
+// and no file is there, each fallback in registration order may make what it reads.
+using VirtualFallback = std::function<std::optional<std::string>(const std::string& guest_path)>;
+void vfs_add_virtual_fallback(VirtualFallback fallback);
+// The contents of the virtual file or fallback for `guest_path`, or nullopt if there is none.
 std::optional<std::string> vfs_read_virtual_file(const char* guest_path);
 
 }  // namespace recomp

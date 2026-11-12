@@ -1,8 +1,21 @@
 # Architecture
 
-The native library of `com.rovio.angrybirds` 8.0.3 (build 8031) is recompiled to C++ at build time, and a host runtime replaces Android and Java. Nothing derived from the APK is part of the repository.
+Each game's native library is recompiled to C++ at build time, and a host runtime shared by all games replaces Android and Java. Nothing derived from the APKs is part of the repository.
 
-## 1. The APK
+## 1. The APKs
+
+The games run on Rovio's engine (Fusion): a native library with Lua 5.1 game logic and a Java shell. They differ in compiler and C++ library:
+
+| Game | Library | Toolchain |
+|---|---|---|
+| Classic 8.0.3 | `libAngryBirdsClassic.so` | GCC, libstdc++ (COW strings), libgcc unwinder |
+| Seasons 6.6.2 | `libAngryBirdsSeasonsFull.so` | GCC, libstdc++ |
+| Rio 2.6.13 | `libAngryBirdsRio.so` | Clang, libc++, LLVM libunwind |
+| Space HD 2.2.14 | `libAngryBirdsSpace.so` | GCC, libstdc++ |
+| Star Wars HD 1.5.13 | `libAngryBirdsStarWars.so` | GCC, libstdc++ |
+| Star Wars II 1.9.25 | `libAngryBirdsStarWarsII.so` | GCC, libstdc++ |
+
+Classic in detail:
 
 | Item | Content |
 |---|---|
@@ -24,15 +37,32 @@ The ARMv7 build is recompiled rather than the x86 one: fixed-width instructions,
 ## 2. Pipeline
 
 ```
-APK ──► tools/scripts/extract_apk.py ──► build/game/{lib,assets}
+APK ──► tools/scripts/extract_apk.py ──► build/games/<id>/{lib,assets}
                          │
                          ▼
           tools/recompiler (abrecomp, capstone)
    ELF + exidx → function discovery → CFG, jump tables → C++
                          │
                          ▼
-          build/generated/*.cpp  +  runtime/  ──►  slingshot (platform/sdl)
+   build/games/<id>/generated/*.cpp  +  runtime/  +  platform/sdl/  +  mods/
+                         │
+                         ▼
+                 build/bin/slingshot-<id>
 ```
+
+### 2.1 Games
+`games/<id>/game.json` describes a supported build; `extract_apk.py` matches an APK by its library and checks its SHA-256. `games/CMakeLists.txt` builds one executable per extracted game and generates `recomp::game` (`runtime/core/include/recomp/game.hpp`) from the file:
+
+| Field | Content |
+|---|---|
+| `title`, `version`, `package` | Game, build, Android package (`/data/data/<package>`) |
+| `library`, `sha256` | `lib<library>.so` and its hash |
+| `stl` | `libc++` for LLVM's C++ library, else libstdc++ |
+| `script_key` | Function that builds the script key at run time |
+| `cipher_init`, `cipher_free`, `cipher_encrypt`, `cipher_decrypt` | The engine's AES cipher object (§3.9) |
+| `load_asset`, `load_config`, `load_script` | Asset loaders wrapped for plain files (§3.9) |
+| `asset_prefix` | What the loaders leave out of asset names |
+| `main_script` | Script run with the game's globals, default `data/scripts/gamelogic.lua` |
 
 ## 3. Runtime
 
@@ -42,16 +72,19 @@ The guest stays 32-bit: a 4 GiB host reservation, guest address `a` is host `g_m
 ### 3.2 Generated code
 - Each guest function is `void fn_<addr>(CPUContext*)`. Registers r0–r15, NZCV, Q, GE and `d0–d31` are in the context.
 - `BL`/`BLX` to known functions are direct calls. Indirect calls and branches go through `dispatch(ctx, addr)`, a generated address table.
-- Branches inside a function are `goto`s. Jump tables (`TBB`/`TBH`, `ADD PC`, `LDR PC`) are resolved statically. Tail calls are a call plus return.
+- Branches inside a function are `goto`s. Jump tables (`TBB`/`TBH`, `ADD PC`, `LDR PC`, Clang's tables of offsets) are resolved statically. Tail calls are a call plus return.
 - Literal pools in `.text` are recognized and not decoded as code.
-- `abrecomp emit --wrap <addr>=<hook>` routes a function's entry to the runtime hook `hook:<hook>`. The original stays callable as `fn_<addr>_original` (`recomp::find_original`). `game/CMakeLists.txt` lists the wrapped functions.
+- Code that no exidx entry or call reaches becomes a function where it starts with an ARM `push {…, lr}` or is an ARM `bx lr` (an empty function, such as one only reached through a vtable).
+- `abrecomp emit --wrap <addr>=<hook>` routes a function's entry to the runtime hook `hook:<hook>`. The original stays callable as `fn_<addr>_original` (`recomp::find_original`). The wrapped functions are listed in `game.json`.
 
 ### 3.3 Imports (HLE)
 Each import resolves to a thunk address that `dispatch` routes to a host implementation (`runtime/hle/`):
 - libc: strings and math call the host. Files, directories and pthreads (host threads with their own context and guest stack) are emulated, sockets always fail, `setjmp`/`longjmp` are handled by the recompiler.
 - A thread that joins itself is detached instead of failing with `EDEADLK`: the game's network worker does that when its callback destroys its owner, and libstdc++ would throw.
+- Calls the library makes to its own exports through the PLT go straight to its definitions. PLT stubs are decoded only inside the code segment.
+- Paths below `/data/data/<package>` map to `$XDG_DATA_HOME/slingshot-animals-recomp/<id>/`; other paths are invisible.
 - GLES2 calls go to the host's GLES2 context (SDL). Client-side vertex arrays are read from guest memory.
-- `AAssetManager` reads the extracted `assets/`. `recomp::vfs_add_asset_patch` changes files as they are opened; `recomp::vfs_add_virtual_file` serves files whose content a host callback makes on each open.
+- `AAssetManager` reads the extracted `assets/`. `recomp::vfs_add_asset_patch` changes files as they are opened; `recomp::vfs_add_virtual_file` serves files whose content a host callback makes on each open; `recomp::vfs_add_virtual_fallback` serves a mapped path that has no host file.
 
 ### 3.4 JNI and Java
 - A fake `JNIEnv`/`JavaVM` lives in guest memory. `runtime/jni` implements the Java classes the engine calls by name and signature; unknown ones are logged and return defaults.
@@ -79,23 +112,30 @@ Each import resolves to a thunk address that `dispatch` routes to a host impleme
 fontconfig finds the fonts (`platform/sdl/font_provider.*`) and prefers Roboto and Noto when installed.
 
 ### 3.8 C++ exceptions
-The guest's own unwinder (`__cxa_throw` → `_Unwind_RaiseException`) is recompiled like any code. Only its last step, `restore_core_regs`, is replaced: it throws a host exception with the target `pc` and `sp`. Functions with landing pads catch it, check that the target is in their frame and jump to the pad. Functions without landing pads have no overhead.
+The guest's own unwinder (`__cxa_throw` → `_Unwind_RaiseException`) is recompiled like any code. Only its last step, libgcc's `restore_core_regs` or LLVM libunwind's `Registers_arm::restoreCoreAndJumpTo` (found by its code when the symbol is hidden), is replaced: it throws a host exception with the target `pc` and `sp`. Functions with landing pads catch it, check that the target is in their frame and jump to the pad. Functions without landing pads have no overhead.
 
 ### 3.9 Plain scripts
-Scripts, `config.json` and `data/config/*.zip` are AES-256-CBC encrypted and LZMA/7z compressed. The three loaders for them are wrapped (`runtime/hle/fusion/script_loader.cpp`): a plain file is returned as it is, anything else goes through the original code. A file is plain if it is not whole AES blocks, starts with `\x1bLua` or `PK\3\4`, or its first 256 bytes have no control characters except tab and line breaks (an encrypted file passes with a chance of about 1e-12). Plain files skip the hash check. `--dump-scripts` runs the original loaders on every file and writes the result. Sprite sheet descriptions use another loader that is not wrapped.
+Scripts, `config.json` and `data/config/*.zip` are encrypted and LZMA/7z compressed: `\x89LZMA\r\n\x1a\n` and an LZMA-alone stream with its size, or a 7z archive. The repository has no key and no decryption: encryption and decryption are the game's own cipher object (`init(cipher, key, 0, 0)`, `encrypt`/`decrypt(cipher, &in, &out)`, `free`) with the key from the game's key getter, called in guest memory (`runtime/hle/fusion/asset_codec.cpp`). The host only (de)compresses.
+
+A file is plain if it is not whole AES blocks, starts with `\x1bLua` or `PK\3\4`, or its first 256 bytes have no control characters except tab and line breaks (an encrypted file passes with a chance of about 1e-12).
+- A plain `.lua` asset (Lua source or bytecode) is opened in the engine's format: compressed and encrypted by the game's cipher (`asset_manager.cpp`), so every loader takes it.
+- Where `game.json` names the loaders (Classic, Seasons), they are wrapped (`script_loader.cpp`): a plain file is returned as it is, anything else goes through the original code. This covers JSON files and configs too, and plain files skip the hash check. Sprite sheet descriptions use another loader that is not wrapped.
+- `--dump-scripts` decrypts the extracted files with the game's cipher. 7z archives and configs go through the wrapped loaders where there are some, else a 7z archive is written as `<name>.7z`.
 
 ## 4. Mods
 
 The base port behaves like the original. Everything else is a mod: `mods/<name>/`, registered with `SLINGSHOT_MOD` (`platform/sdl/mod.hpp`). A mod sees SDL events before the host, runs once per frame before input is delivered, can draw over the frame (`Overlay`) and produces input only through `AndroidInput`.
 
-Most mods patch scripts with `append_lua(script, code)` (`mods/common/game_scripts.hpp`): the script is served as Lua source that runs the original chunk, then the mod's code, in the script's environment, with `_G` as fallback. The original chunk is decrypted by the game's own cipher object, with the key the game builds at run time. Per-frame Lua hooks wrap `isSafeToQuit`, the first call of the game's update. Host and scripts exchange data through virtual files.
+A file `mods/<name>/<id>.cpp` is built for game `<id>` only; a mod with such files supports just those games, the other files serve every game it supports.
+
+Most mods patch scripts with `append_lua(script, code)` (`mods/common/game_scripts.hpp`): the script is served as Lua source that runs the original chunk, then the mod's code, in the script's environment, with `_G` as fallback. The original chunk is decrypted by the game's cipher, and the patched script is a plain one (§3.9). Per-frame Lua hooks wrap `update` and `isSafeToQuit` in `main_script`'s environment (an engine calls one of them on every frame). Host and scripts exchange data through virtual files.
 
 - **wheel-zoom**: in a level, an emulated pinch around the cursor. In menus it drives the PC version's wheel handling, which is still in the scripts (`cursor.wheel`, `cursor.wheelTriggered` → `'WHEEL'` pointer events). `SmartScrollFrame` moves by the notches, once per wheel event (`cursor.wheelId`).
 - **keyboard**: key state comes from the virtual file `cache/slingshot-keys.lua`; the script sets what the engine sets for a finger (`cursor`, `keyPressed/keyHold/keyReleased.LBUTTON`, `touchcount`). Aiming is an offset from the grab point, clamped at 1.2 × the band's length. R and Enter tap the visible restart and next buttons; Enter also sets `keyReleased.RETURN` for popups. Other keys are not passed on, as the scripts have unguarded debug keys.
 - **gamepad-pointer**: stick cursor and buttons as touches and keys.
 - **skip-level-end**: a tap that hits no HUD button does what `skip_button` does, once the level is won or 1.5 s after the last bird.
 - **fullscreen**: F11 → `SDL_SetWindowFullscreen`.
-- **hide-dead-services**: removes menu entries for web pages and online services, the Daily Challenge card, the shop's ad row, ad video offers, the world leaderboard and its trophy book page. Trophies only the server awarded are marked `deprecated` (hidden while locked); the first trophy tab goes unless one is earned or `offline-league` is on. The "Darude" trophy's link grants the trophy.
+- **hide-dead-services**: removes menu entries for web pages and online services, the Daily Challenge card, the shop's ad row, ad video offers, the world leaderboard and its trophy book page. Trophies only the server awarded are marked `deprecated` (hidden while locked); the first trophy tab goes unless one is earned or `offline-league` is on. The "Darude" trophy's link grants the trophy. In Space and Star Wars it removes the full story video, a dead link: Space builds it only with `buildSettings.trailerLink`; Star Wars' arrow menu places its buttons by their order in `children`, so the button is taken out, and the arrow goes too when nothing is left in it.
 - **offline-league**:
   - The league's settings are stored under `getAccountId()`, which is `""` offline, and `saveLuaFile` drops them; the mod uses `"offline"`.
   - Saves that already lost them get the Feather League warm-up resumed: completed steps are moved on, and an egg wait that blocked all touches is skipped.
@@ -110,12 +150,15 @@ Most mods patch scripts with `append_lua(script, code)` (`mods/common/game_scrip
   - Everything is reachable offline. "Ready For More" (free version) and "Episode SURF" (never awarded) are not listed.
   - `checkForAchievements` re-checks most achievements from the save. "Space Invader" and "Episode 7/8 – Total Destruction" come only from their events.
 
+- **composite-audio** (Star Wars, Star Wars II): these versions create composite sounds (`res.createCompositeAudio`: the title and lounge music, power-up sounds) but never play them. The mod plays their parts one after another, each with its own file, volume and channel, without looping and past the level's audio filters. Star Wars sets looping when a sound is created, so its looping parts play as copies created without it; Star Wars II sets it in `playAudio`. The game's checks and stops see the composite, not its parts.
+- **offline-assets** (Star Wars II): the sounds and theme images are downloaded content. The game unpacks the archives into `files/assets_service/` and stores one hash per archive (`SettingsWrapper:getAssetHash`); offline it starts only with both hashes stored, and a file it then cannot open ends the game. The mod reports both archives as installed. A file of them that is not in the data folder is a stand-in (VFS fallback): a sound is half a second of silent MP3, a theme sheet is made with every sprite of the original's description in its size, packed into an RGBA8888 PVR. A sprite is drawn from a grid of colour and opacity points about 32 pixels apart (`starwars2_sprites.hpp`), blended bilinearly; blocks get a darker rim. The grid's colours are averages of the composites the sprite is placed in, rendered from the original sprites, so that neighbouring sprites meet in the same colour.
+
 ## 5. Debugging
 
 - `RECOMP_TRACE=jni,imports,unwind,assets,dl,syscalls,input,audio,fonts,scripts,mods`: per-channel traces.
 - `SDL_AUDIO_DRIVER=disk`: sound output to `sdlaudio.raw` (S16LE).
 - `SLINGSHOT_SCRIPT=<file>`: input events and screenshots at given frames (commands in `platform/sdl/test_script.hpp`).
-- `SLINGSHOT_CONTROL=<fifo>`: the same commands while the game runs (`echo "+0 shot a.bmp" > fifo`, `+n` = n frames from now). `sync <tag>` prints `host: sync <tag> frame <n>` once all earlier commands ran. `lua <code>` runs Lua in the game and logs `lua: <result>`; the game's Lua has no `io`, `os.remove` or `debug`.
+- `SLINGSHOT_CONTROL=<fifo>`: the same commands while the game runs (`echo "+0 shot a.bmp" > fifo`, `+n` = n frames from now). `sync <tag>` prints `host: sync <tag> frame <n>` once all earlier commands ran. `lua <code>` runs Lua in `main_script`'s environment on the next frame and logs `lua: <result>` (`mods/common/lua_console.cpp`); the game's Lua has no `io`, `os.remove` or `debug`.
 - Guest faults print the guest address, registers and a host backtrace with `fn_<addr>` names. A frame taking more than 10 s makes the watchdog print the same for the game thread.
 
 ## 6. Layout
@@ -128,5 +171,5 @@ runtime/hle/        libc, GLES2, Android (assets, log, properties), engine hooks
 runtime/jni/        fake JNIEnv and Java classes
 platform/sdl/       window, input, audio, fonts, mod API, main loop
 mods/               optional features, one directory each
-game/               build rules for the generated code
+games/              game.json per game, build rules for the generated code
 ```

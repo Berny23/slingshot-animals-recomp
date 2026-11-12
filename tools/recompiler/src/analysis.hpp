@@ -96,6 +96,7 @@ private:
     InsnInfo classify(const Function& fn, const Insn& in);
     bool resolve_jump_table(Function& fn, const Insn& in, JumpTable& out);
     bool resolve_computed_jump(Function& fn, const Insn& in, JumpTable& out);
+    bool resolve_offset_table(Function& fn, const Insn& in, JumpTable& out);
     bool find_bound(const Function& fn, const Insn& dispatch, uint32_t before, unsigned reg, uint32_t& bound) const;
     bool const_reg_before(const Function& fn, uint32_t addr, unsigned reg, uint32_t& value) const;
     bool literal_reg_before(const Function& fn, uint32_t addr, unsigned reg, uint32_t& value) const;

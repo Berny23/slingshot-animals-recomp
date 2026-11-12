@@ -1,42 +1,47 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Extract the parts of the user-supplied APK that the build needs.
+"""Extract the parts of user-supplied APKs that the build needs.
 
-Usage: extract_apk.py <game.apk> <out_dir>
+Usage: extract_apk.py <games_dir> <out_root> <game.apk>...
 
-Produces:
-  <out_dir>/lib/libAngryBirdsClassic.so   (armeabi-v7a build, input for the recompiler)
-  <out_dir>/assets/...                    (game data, read at runtime)
+Each APK is matched to a game by its library (games/<id>/game.json) and must
+be the supported build. Produces per game:
+  <out_root>/<id>/lib/lib<library>.so   (armeabi-v7a build, input for the recompiler)
+  <out_root>/<id>/assets/...            (game data, read at runtime)
 """
 import hashlib
+import json
 import sys
 import zipfile
 from pathlib import Path
 
-LIB = "lib/armeabi-v7a/libAngryBirdsClassic.so"
-# SHA-256 of the supported library build (Angry Birds Classic 8.0.3, build 8031).
-KNOWN_LIB_SHA256 = "ce7a5179cd00fce1f6c3c1ccf56e98dd87735ea56d814d962f0dc733b22988f3"
+
+def load_games(games_dir: Path) -> dict:
+    games = {}
+    for f in sorted(games_dir.glob("*/game.json")):
+        games[f.parent.name] = json.loads(f.read_text())
+    return games
 
 
-def main() -> int:
-    if len(sys.argv) != 3:
-        print(__doc__, file=sys.stderr)
-        return 2
-    apk, out = Path(sys.argv[1]), Path(sys.argv[2])
+def extract(apk: Path, games: dict, out_root: Path) -> bool:
     with zipfile.ZipFile(apk) as z:
-        names = z.namelist()
-        if LIB not in names:
-            print(f"error: {LIB} not found in APK; unsupported version?", file=sys.stderr)
-            return 1
-        lib_data = z.read(LIB)
+        names = set(z.namelist())
+        for gid, g in games.items():
+            lib = f"lib/armeabi-v7a/lib{g['library']}.so"
+            if lib in names:
+                break
+        else:
+            print(f"error: {apk}: no supported game library", file=sys.stderr)
+            return False
+        lib_data = z.read(lib)
         digest = hashlib.sha256(lib_data).hexdigest()
-        if KNOWN_LIB_SHA256 and digest != KNOWN_LIB_SHA256:
-            print(f"error: unsupported library build (sha256 {digest})", file=sys.stderr)
-            return 1
+        if digest != g["sha256"]:
+            print(f"error: {apk}: unsupported build of {g['title']} (library sha256 {digest}), "
+                  f"needs {g['version']}", file=sys.stderr)
+            return False
+        out = out_root / gid
         (out / "lib").mkdir(parents=True, exist_ok=True)
-        (out / "lib" / "libAngryBirdsClassic.so").write_bytes(lib_data)
-
-        for name in names:
+        for name in sorted(names):
             if not name.startswith("assets/") or name.endswith("/"):
                 continue
             dest = (out / name).resolve()
@@ -45,8 +50,22 @@ def main() -> int:
             dest.parent.mkdir(parents=True, exist_ok=True)
             with z.open(name) as src, open(dest, "wb") as dst:
                 dst.write(src.read())
-    print(f"extracted {LIB} (sha256 {digest}) and assets to {out}")
-    return 0
+        # Written last: its presence marks a complete extraction.
+        (out / "lib" / f"lib{g['library']}.so").write_bytes(lib_data)
+    print(f"{apk.name}: {g['title']} {g['version']} -> {out}")
+    return True
+
+
+def main() -> int:
+    if len(sys.argv) < 4:
+        print(__doc__, file=sys.stderr)
+        return 2
+    games = load_games(Path(sys.argv[1]))
+    out_root = Path(sys.argv[2])
+    ok = True
+    for apk in sys.argv[3:]:
+        ok &= extract(Path(apk), games, out_root)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
