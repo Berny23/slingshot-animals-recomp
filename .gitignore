@@ -1,0 +1,6 @@
+# Copyrighted input and everything derived from it must never be committed
+original_data/
+*.apk
+build/
+generated/
+extracted/
