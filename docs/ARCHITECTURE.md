@@ -63,6 +63,8 @@ APK ──► tools/scripts/extract_apk.py ──► build/games/<id>/{lib,asset
 | `load_asset`, `load_config`, `load_script` | Asset loaders wrapped for plain files (§3.9) |
 | `asset_prefix` | What the loaders leave out of asset names |
 | `main_script` | Script run with the game's globals, default `data/scripts/gamelogic.lua` |
+| `script_format` | `7z` if the scripts are 7z archives (default: `\x89LZMA` streams) |
+| `app_class`, `input_class` | Java classes with the lifecycle and input natives, default `com/rovio/fusion/NativeApplication` and `com/rovio/fusion/MyInputHandler` |
 
 ## 3. Runtime
 

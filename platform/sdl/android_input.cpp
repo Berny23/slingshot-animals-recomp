@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstdio>
 
+#include "recomp/game.hpp"
 #include "recomp/jni.hpp"
 #include "recomp/runtime.hpp"
 
@@ -11,7 +12,6 @@ namespace slingshot {
 namespace {
 
 namespace jni = recomp::jni;
-constexpr const char* kHandler = "com/rovio/fusion/MyInputHandler";
 
 uint32_t bits(float f) { return std::bit_cast<uint32_t>(f); }
 
@@ -122,10 +122,10 @@ void AndroidInput::gamepad_axes(const AxisValues& values, int device) {
 void AndroidInput::deliver() {
     flush_moves();
     if (queue_.empty()) return;
-    static const uint32_t touch = jni::native_method(kHandler, "nativeInput");
-    static const uint32_t key = jni::native_method(kHandler, "nativeKeyInput");
-    static const uint32_t axis = jni::native_method(kHandler, "nativeInputAxis");
-    if (!handler_) handler_ = jni::new_global(jni::new_object(kHandler));
+    static const uint32_t touch = jni::native_method(recomp::game.input_class, "nativeInput");
+    static const uint32_t key = jni::native_method(recomp::game.input_class, "nativeKeyInput");
+    static const uint32_t axis = jni::native_method(recomp::game.input_class, "nativeInputAxis");
+    if (!handler_) handler_ = jni::new_global(jni::new_object(recomp::game.input_class));
 
     jni::NativeFrame frame;
     const uint32_t env = jni::env();

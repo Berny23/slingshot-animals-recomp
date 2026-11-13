@@ -46,7 +46,7 @@ u32 h_AAssetManager_open(u32, u32 name, int) {
     if (!safe_name(n)) return 0;
     auto bytes = vfs_read_asset(n);
     if (bytes && n.size() > 4 && !n.compare(n.size() - 4, 4, ".lua") && is_plain_asset(*bytes))
-        if (auto encoded = encode_script(*bytes)) bytes = std::move(encoded);
+        if (auto encoded = encode_script(*bytes, n)) bytes = std::move(encoded);
     if (!bytes) {
         if (trace_enabled("assets")) std::fprintf(stderr, "assets: missing %s\n", n.c_str());
         return 0;

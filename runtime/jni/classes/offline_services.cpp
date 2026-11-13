@@ -7,6 +7,7 @@
 #include <chrono>
 #include <string>
 
+#include "recomp/game.hpp"
 #include "recomp/java.hpp"
 #include "recomp/jni.hpp"
 
@@ -64,6 +65,22 @@ RECOMP_JAVA_METHOD(kUtils, "advertisingTrackingEnabled", "()Z", [](Call&) { retu
 RECOMP_JAVA_METHOD(kUtils, "queryNewPlayReferrer", "()Z", [](Call&) { return boolean(false); });
 RECOMP_JAVA_METHOD("com/rovio/rcs/ads/Utils", "test3rdPartyAdsActivities", "()V", [](Call&) { return Value(0); });
 
+// ---- com.rovio.skynest.Utils (the older name of the services' utilities)
+constexpr const char* kSkynestUtils = "com/rovio/skynest/Utils";
+RECOMP_JAVA_METHOD(kSkynestUtils, "userAgentString", "()Ljava/lang/String;", [](Call&) {
+    return ref(new_string("Mozilla/5.0 (Linux; Android 4.4.4; Desktop) AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Version/4.0 Chrome/33.0.0.0 Safari/537.36"));
+});
+RECOMP_JAVA_METHOD(kSkynestUtils, "networkType", "()Ljava/lang/String;", [](Call&) { return ref(new_string("")); });
+RECOMP_JAVA_METHOD(kSkynestUtils, "packageName", "()Ljava/lang/String;",
+                   [](Call&) { return ref(new_string(game.package)); });
+RECOMP_JAVA_METHOD(kSkynestUtils, "androidId", "()Ljava/lang/String;", [](Call&) { return ref(0); });
+RECOMP_JAVA_METHOD(kSkynestUtils, "advertisingId", "()Ljava/lang/String;", [](Call&) { return ref(0); });
+RECOMP_JAVA_METHOD(kSkynestUtils, "getPPI", "()I", [](Call&) { return integer(int(display().dpi)); });
+
+// ---- Google Play Games: not signed in, nothing to set up
+RECOMP_JAVA_METHOD("com/rovio/fusion/GooglePlayGameServicesWrapper", "<init>", "(J)V", [](Call&) { return Value(0); });
+
 // ---- notifications: none on a desktop
 RECOMP_JAVA_METHOD("com/rovio/fusion/RemoteNotificationsClientWrapper", "setEnabled", "(Z)V",
                    [](Call&) { return Value(0); });
@@ -75,6 +92,9 @@ RECOMP_JAVA_METHOD("com/rovio/fusion/LocalNotificationsWrapper", "removeNotifica
 constexpr const char* kFlurry = "com/flurry/android/FlurryAgent";
 RECOMP_JAVA_METHOD(kFlurry, "init", "(Landroid/content/Context;Ljava/lang/String;)V", [](Call&) { return Value(0); });
 RECOMP_JAVA_METHOD(kFlurry, "onStartSession", "(Landroid/content/Context;)V", [](Call&) { return Value(0); });
+RECOMP_JAVA_METHOD(kFlurry, "onStartSession", "(Landroid/content/Context;Ljava/lang/String;)V",
+                   [](Call&) { return Value(0); });
+RECOMP_JAVA_METHOD(kFlurry, "setUseHttps", "(Z)V", [](Call&) { return Value(0); });
 RECOMP_JAVA_METHOD(kFlurry, "onEndSession", "(Landroid/content/Context;)V", [](Call&) { return Value(0); });
 RECOMP_JAVA_METHOD(kFlurry, "onEvent", "(Ljava/lang/String;Ljava/util/Map;)V", [](Call&) { return Value(0); });
 RECOMP_JAVA_METHOD(kFlurry, "setCaptureUncaughtExceptions", "(Z)V", [](Call&) { return Value(0); });

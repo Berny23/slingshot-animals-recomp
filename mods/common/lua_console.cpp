@@ -2,15 +2,23 @@
 // Debug aid: the control command "lua <code>" (platform/sdl/test_script.hpp)
 // writes <code> to kConsoleFile in the game's cache directory. The game runs it on
 // its next frame with its globals, deletes it and logs "lua: <result>" or
-// "lua error: ...". `dump(v, depth)` returns a table as text.
+// "lua error: ...". `dump(v, depth)` returns a table as text. The script logs by
+// opening kLogPrefix + the text in hex, which the host prints (release builds of
+// the engine have an empty print).
+#include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <string>
+#include <string_view>
 
 #include "common/game_scripts.hpp"
 #include "lua_console.hpp"
 #include "recomp/game.hpp"
+#include "recomp/vfs.hpp"
 
 namespace {
+
+constexpr std::string_view kLogPrefix = "cache/slingshot-console-log/";
 
 std::string console_lua() {
     return std::string(R"(
@@ -30,7 +38,9 @@ local function dump(v, depth, indent)
     return G.table.concat(out, '\n')
 end
 G.dump = dump
-local log = native and native.logError or G.rawget(G, 'logError') or G.print  -- to the log
+local function log(text)
+    G.loadfile(')" + std::string(kLogPrefix) + R"(' .. text:gsub('.', function(c) return G.string.format('%02x', c:byte()) end))
+end
 -- The file is `return <number>, function() <code> end`; each number runs once
 -- (this Lua has no io library and no os.remove: the host deletes the file).
 local env = G.getfenv(1)  -- the game's globals (gamelogic.lua's environment), then _G
@@ -86,6 +96,14 @@ end
 const bool registered = [] {
     const char* control = std::getenv("SLINGSHOT_CONTROL");
     if (!control) return false;
+    recomp::vfs_add_virtual_fallback([](const std::string& path) -> std::optional<std::string> {
+        if (path.compare(0, kLogPrefix.size(), kLogPrefix)) return std::nullopt;
+        std::string text;
+        for (size_t i = kLogPrefix.size(); i + 1 < path.size(); i += 2)
+            text += char(std::strtol(path.substr(i, 2).c_str(), nullptr, 16));
+        std::fprintf(stderr, "%s\n", text.c_str());
+        return std::string();
+    });
     slingshot::mods::append_lua(recomp::game.main_script, console_lua());
     return true;
 }();

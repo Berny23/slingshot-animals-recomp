@@ -7,6 +7,7 @@ namespace recomp {
 const GameInfo game = {
     "@GAME_ID@",
     "@GAME_TITLE@",
+    "@GAME_VERSION@",
     "@GAME_PACKAGE@",
     "@GAME_LIBRARY@",
     "@GAME_DIR@",
@@ -16,7 +17,10 @@ const GameInfo game = {
     @GAME_LOAD_CONFIG@,
     "@GAME_ASSET_PREFIX@",
     @GAME_LIBCXX@,
+    @GAME_SCRIPTS_7Z@,
     "@GAME_MAIN_SCRIPT@",
+    "@GAME_APP_CLASS@",
+    "@GAME_INPUT_CLASS@",
 };
 
 }  // namespace recomp

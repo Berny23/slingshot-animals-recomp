@@ -5,6 +5,7 @@
 #include <random>
 #include <string>
 
+#include "recomp/game.hpp"
 #include "recomp/java.hpp"
 #include "recomp/jni.hpp"
 #include "recomp/vfs.hpp"
@@ -90,8 +91,12 @@ RECOMP_JAVA_METHOD(kAccel, "getFilteredZ", "()F", [](Call&) { return float_(0); 
 
 // App.isSilentProfile: the ringer mode is not RINGER_MODE_NORMAL. A desktop has no ringer.
 RECOMP_JAVA_METHOD("com/rovio/fusion/App", "isSilentProfile", "()Z", [](Call&) { return boolean(false); });
+// App.allowSleep: FLAG_KEEP_SCREEN_ON; the platform keeps the screen on while the game runs.
+RECOMP_JAVA_METHOD("com/rovio/fusion/App", "allowSleep", "(Z)V", [](Call&) { return Value(0); });
+// No camera (the AR features).
+RECOMP_JAVA_METHOD("com/rovio/fusion/CameraWrapper", "isSupported", "()Z", [](Call&) { return boolean(false); });
 // PackageInfo.versionName of the APK.
 RECOMP_JAVA_METHOD("com/rovio/fusion/ApplicationVersion", "getApplicationVersionString", "()Ljava/lang/String;",
-                   [](Call&) { return ref(new_string("8.0.3")); });
+                   [](Call&) { return ref(new_string(game.version)); });
 }  // namespace
 }  // namespace recomp::java

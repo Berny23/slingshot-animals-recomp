@@ -17,4 +17,5 @@ find_package(Freetype REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(HARFBUZZ REQUIRED IMPORTED_TARGET harfbuzz)
 pkg_check_modules(LIBLZMA REQUIRED IMPORTED_TARGET liblzma)  # hle/fusion/asset_codec.cpp
-target_link_libraries(recomp_runtime PUBLIC Threads::Threads PRIVATE Freetype::Freetype PkgConfig::HARFBUZZ PkgConfig::LIBLZMA)
+pkg_check_modules(ZLIB REQUIRED IMPORTED_TARGET zlib)  # jni/classes/fusion_file_reader.cpp
+target_link_libraries(recomp_runtime PUBLIC Threads::Threads PRIVATE Freetype::Freetype PkgConfig::HARFBUZZ PkgConfig::LIBLZMA PkgConfig::ZLIB)

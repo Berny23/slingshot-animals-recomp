@@ -142,11 +142,11 @@ RECOMP_JAVA_METHOD(kAudio, "<init>", "(JIIII)V", [](Call& c) {
     return Value(0);
 });
 
-RECOMP_JAVA_METHOD(kAudio, "startOutput", "()Z", [](Call& c) {
+bool start_output(Call& c) {
     auto o = output(c.self);
-    if (!o) return boolean(false);
-    if (o->playing) return boolean(true);
-    if (!g_backend) return boolean(false);  // no audio device: the engine keeps asking
+    if (!o) return false;
+    if (o->playing) return true;
+    if (!g_backend) return false;  // no audio device: the engine keeps asking
     o->self = new_global(c.self);
     o->array = new_global(new_array('B', o->buffer_bytes));
     o->fifo.clear();
@@ -157,10 +157,17 @@ RECOMP_JAVA_METHOD(kAudio, "startOutput", "()Z", [](Call& c) {
         delete_global(o->array);
         delete_global(o->self);
         o->self = o->array = 0;
-        return boolean(false);
+        return false;
     }
     o->playing = true;
-    return boolean(true);
+    return true;
+}
+
+RECOMP_JAVA_METHOD(kAudio, "startOutput", "()Z", [](Call& c) { return boolean(start_output(c)); });
+// Older games: no result.
+RECOMP_JAVA_METHOD(kAudio, "startOutput", "()V", [](Call& c) {
+    start_output(c);
+    return Value(0);
 });
 
 RECOMP_JAVA_METHOD(kAudio, "stopOutput", "()V", [](Call& c) {

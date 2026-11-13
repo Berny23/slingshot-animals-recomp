@@ -441,13 +441,7 @@ u32 j_GetPrimitiveArrayCritical(u32, u32 a, u32 is_copy) {
 }
 void j_ReleaseCritical(u32, u32, u32, int) {}
 u32 j_NewWeakGlobalRef(u32, u32 r) { return new_global(r); }
-u32 j_NewDirectByteBuffer(u32, u32 addr, int64_t cap) {
-    const Ref r = new_object("java/nio/DirectByteBuffer");
-    Object* o = object(r);
-    o->buffer = addr;
-    o->capacity = u32(cap);
-    return r;
-}
+u32 j_NewDirectByteBuffer(u32, u32 addr, int64_t cap) { return new_direct_buffer(addr, u32(cap)); }
 u32 j_GetDirectBufferAddress(u32, u32 buf) {
     Object* o = object(buf);
     return o ? o->buffer : 0;
@@ -639,6 +633,14 @@ std::string mangle(std::string_view s) {
 }
 
 }  // namespace
+
+Ref new_direct_buffer(uint32_t addr, uint32_t capacity) {
+    const Ref r = new_object("java/nio/DirectByteBuffer");
+    Object* o = object(r);
+    o->buffer = addr;
+    o->capacity = capacity;
+    return r;
+}
 
 uint32_t env() { return tables().env; }
 uint32_t vm() { return tables().vm; }

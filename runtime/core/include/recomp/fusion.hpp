@@ -20,9 +20,9 @@ bool is_plain_asset(const std::vector<uint8_t>& data);
 // game thread.
 std::optional<std::vector<uint8_t>> decode_asset(const std::vector<uint8_t>& data);
 
-// A script in the engine's format, encrypted by the game's cipher; nullopt if the
-// game's encryption is unknown. Runs guest code.
-std::optional<std::vector<uint8_t>> encode_script(const std::vector<uint8_t>& data);
+// The script asset `name` in the engine's format, encrypted by the game's cipher;
+// nullopt if the game's encryption is unknown. Runs guest code.
+std::optional<std::vector<uint8_t>> encode_script(const std::vector<uint8_t>& data, const std::string& name);
 
 // Writes the game's encrypted scripts and JSON files, and with a wrapped config
 // loader its configs, decrypted and decompressed below `dir` with their asset

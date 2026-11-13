@@ -39,10 +39,9 @@
 namespace {
 
 namespace jni = recomp::jni;
-constexpr const char* kApp = "com/rovio/fusion/NativeApplication";
-
-// com.rovio.fusion.NativeApplication: the game's native methods and the
-// lifecycle state machine around them (doInit/doPause/doResume/doShutdown).
+// com.rovio.fusion.NativeApplication (MyRenderer in older games): the game's
+// native methods and the lifecycle state machine around them
+// (doInit/doPause/doResume/doShutdown).
 struct NativeApp {
     enum class State { Uninitialized, RenderReady, Paused, Exiting };
     jni::Ref self = 0;
@@ -82,7 +81,7 @@ struct NativeApp {
     }
 
     uint32_t call(const char* name, std::initializer_list<uint32_t> extra = {}) {
-        const uint32_t fn = jni::native_method(kApp, name);
+        const uint32_t fn = jni::native_method(recomp::game.app_class, name);
         if (!fn) {
             std::fprintf(stderr, "host: game has no %s\n", name);
             return 0;
@@ -263,7 +262,7 @@ int main(int argc, char** argv) {
 
     // NativeApplication(GLSurfaceView, filesDir)
     NativeApp app;
-    app.self = jni::new_global(jni::new_object(kApp));
+    app.self = jni::new_global(jni::new_object(recomp::game.app_class));
     {
         jni::NativeFrame frame;
         app.call("nativeConfig", {jni::new_string(recomp::java::files_dir())});

@@ -2,9 +2,32 @@
 #include "disasm.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <stdexcept>
 
 namespace recomp {
+
+namespace {
+// At least two operand slots, zeroed when unused.
+size_t arm_size(const cs_arm& d) { return offsetof(cs_arm, operands) + std::max<size_t>(d.op_count, 2) * sizeof(cs_arm_op); }
+}  // namespace
+
+Insn::Insn(const cs_arm& detail)
+    : arm_size_(arm_size(detail)),
+      arm_storage_(new unsigned char[arm_size_]()),
+      arm(*reinterpret_cast<const cs_arm*>(arm_storage_.get())) {
+    std::memcpy(arm_storage_.get(), &detail, offsetof(cs_arm, operands) + detail.op_count * sizeof(cs_arm_op));
+}
+
+void Insn::replace_with(const Insn& o) {
+    if (o.arm_size_ != arm_size_) throw std::runtime_error("capstone: instruction decoded with other operands");
+    addr = o.addr, size = o.size, mode = o.mode, id = o.id, name = o.name;
+    mnemonic = o.mnemonic, op_str = o.op_str, raw = o.raw;
+    std::copy_n(o.regs_read, 20, regs_read), regs_read_count = o.regs_read_count;
+    std::copy_n(o.regs_write, 20, regs_write), regs_write_count = o.regs_write_count;
+    std::copy_n(o.groups, 8, groups), groups_count = o.groups_count;
+    std::memcpy(arm_storage_.get(), o.arm_storage_.get(), arm_size_);
+}
 
 Disassembler::Disassembler(const ElfImage& image) : image_(image) {
     if (cs_open(CS_ARCH_ARM, CS_MODE_ARM, &arm_) != CS_ERR_OK ||
@@ -68,7 +91,7 @@ const Insn* Disassembler::decode_uncached(uint32_t addr, Mode mode) {
         size_t size = bytes.size();
         uint64_t address = addr;
         if (cs_disasm_iter(h, &code, &size, &address, ci)) {
-            result = std::make_unique<Insn>();
+            result = std::make_unique<Insn>(ci->detail->arm);
             Insn& in = *result;
             in.addr = addr;
             in.size = uint8_t(ci->size);
@@ -77,7 +100,6 @@ const Insn* Disassembler::decode_uncached(uint32_t addr, Mode mode) {
             in.name = cs_insn_name(h, ci->id);
             in.mnemonic = ci->mnemonic;
             in.op_str = ci->op_str;
-            in.arm = ci->detail->arm;
             in.regs_read_count = ci->detail->regs_read_count;
             in.regs_write_count = ci->detail->regs_write_count;
             in.groups_count = ci->detail->groups_count;
@@ -92,7 +114,7 @@ const Insn* Disassembler::decode_uncached(uint32_t addr, Mode mode) {
     }
     auto& slot = cache_[key];
     if (slot && result) {
-        *slot = std::move(*result);  // re-decoded in IT context: update in place
+        slot->replace_with(*result);  // re-decoded in IT context: update in place
     } else if (!slot) {
         slot = std::move(result);
     }

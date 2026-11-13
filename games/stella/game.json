@@ -1,0 +1,16 @@
+{
+    "title": "Angry Birds Stella",
+    "version": "1.1.5 (build 1152)",
+    "package": "com.rovio.angrybirdsstella",
+    "library": "Purple",
+    "sha256": "03f567d12fb608b0d3cb0713fcb188407c6f6c0f4d3e29cb2f3515bc0c265767",
+    "script_key": "0x1f6688",
+    "cipher_init": "0x61b62c",
+    "cipher_free": "0x61b684",
+    "cipher_encrypt": "0x61b6c8",
+    "cipher_decrypt": "0x61b6e8",
+    "main_script": "data/scripts_common/gamelogic.lua",
+    "script_format": "7z",
+    "app_class": "com/rovio/fusion/MyRenderer",
+    "input_class": "com/rovio/fusion/MyRenderer"
+}

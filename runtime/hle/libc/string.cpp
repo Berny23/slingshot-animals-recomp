@@ -41,6 +41,7 @@ u32 h_memrchr(u32 s, u32 c, u32 n) { return G(::memrchr(P(s), int(c), n)); }
 
 // ---- strings
 u32 h_strlen(u32 s) { return u32(std::strlen(str(s))); }
+u32 h_strnlen(u32 s, u32 n) { return u32(::strnlen(str(s), n)); }
 u32 h_strcpy(u32 d, u32 s) { std::strcpy(str(d), str(s)); return d; }
 u32 h_strncpy(u32 d, u32 s, u32 n) { std::strncpy(str(d), str(s), n); return d; }
 u32 h_strcat(u32 d, u32 s) { std::strcat(str(d), str(s)); return d; }
@@ -204,7 +205,7 @@ RECOMP_REGISTER_IMPORT("__aeabi_memclr4", RECOMP_HLE(h_aeabi_memclr));
 RECOMP_REGISTER_IMPORT("__aeabi_memclr8", RECOMP_HLE(h_aeabi_memclr));
 REG(memmem);
 REG(memcpy); REG(memmove); REG(memset); REG(memcmp); REG(memchr); REG(memrchr);
-REG(strlen); REG(strcpy); REG(strncpy); REG(strcat); REG(strncat); REG(strcmp); REG(strncmp);
+REG(strlen); REG(strnlen); REG(strcpy); REG(strncpy); REG(strcat); REG(strncat); REG(strcmp); REG(strncmp);
 REG(strcasecmp); REG(strncasecmp); REG(strcoll); REG(strxfrm); REG(strchr); REG(strrchr); REG(strstr);
 REG(strpbrk); REG(strspn); REG(strcspn); REG(strdup); REG(strtok_r); REG(strerror); REG(strerror_r);
 REG(atoi); REG(atol); REG(strtol); REG(strtoul); REG(strtoll); REG(strtoull); REG(strtod);

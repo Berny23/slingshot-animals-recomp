@@ -76,6 +76,8 @@ void set_field(Ref obj, std::string_view name, std::string_view sig, Value v);
 // Primitive arrays keep their elements in guest memory.
 Ref new_array(char elem_type, uint32_t length);  // 'Z','B','C','S','I','J','F','D'
 Ref new_object_array(std::string_view elem_class, uint32_t length);
+// java.nio.ByteBuffer over guest memory (what NewDirectByteBuffer makes).
+Ref new_direct_buffer(uint32_t addr, uint32_t capacity);
 uint32_t array_length(Ref a);
 uint32_t array_data(Ref a);  // guest address of primitive elements
 Ref array_get(Ref a, uint32_t index);

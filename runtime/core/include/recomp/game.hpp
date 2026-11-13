@@ -18,6 +18,7 @@ struct GameCipher {
 struct GameInfo {
     const char* id;          // games/<id>
     const char* title;
+    const char* version;     // the APK's versionName
     const char* package;     // Android package name
     const char* library;     // lib<library>.so
     const char* game_dir;    // default directory of the extracted APK
@@ -27,7 +28,10 @@ struct GameInfo {
     uint32_t load_config;    // config archive loader wrapped as fusion_load_config, 0 if none
     const char* asset_prefix;  // what the loaders leave out of asset names ("data/" or "")
     bool libcxx;             // C++ library: LLVM libc++ (else GNU libstdc++)
+    bool scripts_7z;         // scripts are 7z archives (else \x89LZMA streams)
     const char* main_script;  // asset of the script run with the game's globals (gamelogic.lua)
+    const char* app_class;    // Java class with the lifecycle natives (nativeInit, nativeUpdate, ...)
+    const char* input_class;  // Java class with the input natives (nativeInput, nativeKeyInput, ...)
 };
 
 extern const GameInfo game;

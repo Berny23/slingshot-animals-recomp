@@ -151,6 +151,9 @@ int h_uname(u32 buf) {
 }
 int h_getpid() { return int(::getpid()); }
 int h_geteuid() { return 10123; }  // an app uid
+int h_getuid() { return h_geteuid(); }
+int h_getgid() { return h_geteuid(); }
+int h_getegid() { return h_geteuid(); }
 u32 h_getpwuid(u32) { return 0; }
 int h_gethostname(u32 buf, u32 n) {
     std::snprintf(mem::str(buf), n, "localhost");
@@ -286,7 +289,7 @@ void h___google_potentially_blocking_region_end() {}
 REG(malloc); REG(calloc); REG(realloc); REG(free); REG(memalign); REG(posix_memalign); REG(malloc_usable_size);
 REG(__errno); REG(qsort); REG(bsearch); REG(lrand48); REG(srand48); REG(getenv); REG(abort); REG(exit);
 RECOMP_REGISTER_IMPORT("_exit", RECOMP_HLE(h_exit));
-REG(__stack_chk_fail); REG(__cxa_atexit); REG(__cxa_finalize); REG(sysconf); REG(uname); REG(getpid); REG(geteuid);
+REG(__stack_chk_fail); REG(__cxa_atexit); REG(__cxa_finalize); REG(sysconf); REG(uname); REG(getpid); REG(geteuid); REG(getuid); REG(getgid); REG(getegid);
 REG(getpwuid); REG(gethostname); REG(__system_property_get); REG(getauxval); REG(dlsym); REG(dladdr); REG(dlopen); REG(dlclose); REG(dlerror); REG(sched_yield);
 REG(nanosleep); REG(sigaction); REG(sigprocmask); REG(socket); REG(connect); REG(bind); REG(send); REG(recv);
 REG(recvfrom); REG(getsockopt); REG(setsockopt); REG(getsockname); REG(getpeername); REG(getaddrinfo);

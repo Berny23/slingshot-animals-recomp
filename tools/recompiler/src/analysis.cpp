@@ -207,7 +207,7 @@ double Analysis::mode_score(uint32_t addr, Mode m, bool path_only) const {
                 break;
             case ARM_INS_B: {
                 uint32_t t = uint32_t(in->arm.operands[0].imm);
-                if ((t < region_begin || t >= region_end) && !known_entry(t)) sc -= 4;
+                if (t < region_begin || t >= region_end) sc += known_entry(t) ? 2 : -4;
                 break;
             }
             default:

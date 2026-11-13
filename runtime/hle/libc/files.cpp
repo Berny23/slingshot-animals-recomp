@@ -302,6 +302,7 @@ int h_munmap(u32 addr, u32) {
 }
 
 // ------------------------------------------------------------------ directories
+constexpr u32 kDirentSize = 280;
 std::mutex g_dir_lock;
 std::unordered_map<u32, DIR*> g_dirs;
 
@@ -310,7 +311,7 @@ u32 h_opendir(u32 path) {
     if (!map_path(path, hp)) return 0;
     DIR* d = ::opendir(hp.c_str());
     if (!d) return u32(ret(0));
-    const u32 h = mem::alloc_zeroed(16);
+    const u32 h = mem::alloc_zeroed(16 + kDirentSize);  // and readdir's entry
     std::lock_guard lk(g_dir_lock);
     g_dirs[h] = d;
     return h;
@@ -339,14 +340,22 @@ int h_readdir_r(u32 h, u32 entry, u32 result) {
         return errno;
     }
     // bionic struct dirent: u64 d_ino, s64 d_off, u16 d_reclen, u8 d_type, char d_name[256]
-    std::memset(g_mem + entry, 0, 280);
+    std::memset(g_mem + entry, 0, kDirentSize);
     st64(entry, e->d_ino);
     st64(entry + 8, uint64_t(e->d_off));
-    st16(entry + 16, 280);
+    st16(entry + 16, kDirentSize);
     st8(entry + 18, e->d_type);
     std::snprintf(str(entry + 19), 256, "%s", e->d_name);
     st32(result, entry);
     return 0;
+}
+u32 h_readdir(u32 h) {
+    const u32 entry = h + 16, result = mem::alloc(4);
+    const int err = h_readdir_r(h, entry, result);
+    const u32 r = ld32(result);
+    mem::free(result);
+    if (err) errno = err;
+    return err ? 0 : r;
 }
 
 // ------------------------------------------------------------------ stdio streams
@@ -452,6 +461,9 @@ int h_fputs(u32 s, u32 f) { FILE_OR(f, -1) return std::fputs(str(s), hf); }
 int h_fputc(int ch, u32 f) { FILE_OR(f, -1) return std::fputc(ch, hf); }
 int h_putc(int ch, u32 f) { return h_fputc(ch, f); }
 int h_getc(u32 f) { FILE_OR(f, -1) return std::getc(hf); }
+// Old bionic's getc() macro reads the FILE's buffer and calls this when it is
+// empty; the guest FILE has no buffer (_r is 0), so every character comes here.
+int h___srget(u32 f) { return h_getc(f); }
 int h_ungetc(int ch, u32 f) { FILE_OR(f, -1) return std::ungetc(ch, hf); }
 u32 h_getwc(u32 f) { FILE_OR(f, 0xffffffffu) return u32(std::fgetwc(hf)); }
 u32 h_putwc(u32 ch, u32 f) { FILE_OR(f, 0xffffffffu) return u32(std::fputwc(wchar_t(ch), hf)); }
@@ -474,6 +486,12 @@ void h_vprintf(CPU* c) {
     ArgReader va = ArgReader::from_memory(c, c->r[1]);
     const std::string s = guest_format(str(c->r[0]), va);
     c->r[0] = u32(std::fwrite(s.data(), 1, s.size(), stdout));
+}
+void h_vfprintf(CPU* c) {
+    FILE* hf = host_file(c->r[0]);
+    ArgReader va = ArgReader::from_memory(c, c->r[2]);
+    const std::string s = guest_format(str(c->r[1]), va);
+    c->r[0] = hf ? u32(std::fwrite(s.data(), 1, s.size(), hf)) : u32(-1);
 }
 void h_fprintf(CPU* c) {
     ArgReader a(c);
@@ -534,11 +552,11 @@ void h_sscanf(CPU* c) {
 REGRAW(open); REG(close); REG(read); REG(write); REG(writev); REG(lseek); REG(fsync); REG(ftruncate); REG(dup);
 REG(pipe); REGRAW(fcntl); REGRAW(ioctl); REG(poll); REG(fstat); REG(stat); REG(access); REG(mkdir); REG(rmdir);
 REG(unlink); REG(remove); REG(rename); REG(chmod); REG(utime); REG(statfs); REG(pathconf); REG(getcwd);
-REG(mkstemp); REG(basename); REG(fnmatch); REG(mmap); REG(munmap); REG(opendir); REG(closedir); REG(readdir_r);
+REG(mkstemp); REG(basename); REG(fnmatch); REG(mmap); REG(munmap); REG(opendir); REG(closedir); REG(readdir_r); REG(readdir);
 REG(fopen); REG(fdopen); REG(freopen); REG(tmpfile); REG(fclose); REG(fread); REG(fwrite); REG(fseek); REG(fseeko);
 REG(ftell); REG(ftello); REG(fflush); REG(feof); REG(ferror); REG(fgets); REG(fputs); REG(fputc); REG(putc);
-REG(getc); REG(ungetc); REG(getwc); REG(putwc); REG(fputwc); REG(ungetwc); REG(setvbuf); REG(puts); REG(perror);
-REGRAW(printf); REGRAW(vprintf); REGRAW(fprintf); REGRAW(sprintf); REGRAW(snprintf); REGRAW(vsprintf);
+REG(getc); REG(__srget); REG(ungetc); REG(getwc); REG(putwc); REG(fputwc); REG(ungetwc); REG(setvbuf); REG(puts); REG(perror);
+REGRAW(printf); REGRAW(vprintf); REGRAW(fprintf); REGRAW(vfprintf); REGRAW(sprintf); REGRAW(snprintf); REGRAW(vsprintf);
 REGRAW(vsnprintf); REGRAW(vasprintf); REGRAW(sscanf); REGRAW(vsscanf);
 
 }  // namespace

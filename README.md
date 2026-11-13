@@ -22,6 +22,7 @@ Unofficial static recompilation of Rovio's Android *Angry Birds* games. Each gam
 | `offline-shop` | Classic | Shop without real money: no gem packs, the Mighty Eagle costs 1500 coins, levels pay coins and gems |
 | `composite-audio` | Star Wars, Star Wars II | Plays the main menu music and the power-up sounds, which these versions of the games no longer play |
 | `offline-assets` | Star Wars II | Starts without downloading: with the downloaded content copied into the data folder (see below), or with silent sounds and simplified theme images in its place |
+| `audio-quality` | Stella | Mixes sound in stereo at 24 kHz, the best of the game's sound files, instead of 16 kHz mono as on Android |
 | `game-statistics` | Classic | Statistics page with the progress to 100 %, the game's counters and its Google Play achievements, with a banner when one is unlocked |
 
 ## Supported versions
@@ -36,19 +37,20 @@ APKs with the `armeabi-v7a` library:
 | `space` | Angry Birds Space HD | 2.2.14 (build 221400) | `com.rovio.angrybirdsspaceHD` |
 | `starwars` | Angry Birds Star Wars HD | 1.5.13 (build 151300) | `com.rovio.angrybirdsstarwarshd.premium.iap` |
 | `starwars2` | Angry Birds Star Wars II | 1.9.25 (build 192500) | `com.rovio.angrybirdsstarwarsii.ads` |
+| `stella` | Angry Birds Stella | 1.1.5 (build 1152) | `com.rovio.angrybirdsstella` |
 
 The build checks each library's SHA-256.
 
 ## Build
 
-Needs CMake 3.24, a C++20 compiler, Python 3, capstone, SDL3, FreeType, HarfBuzz, fontconfig and liblzma.
+Needs CMake 3.24, a C++20 compiler, Python 3, capstone, SDL3, FreeType, HarfBuzz, fontconfig, liblzma and zlib.
 
 ```
 cmake -S . -B build -DGAME_APKS="/path/to/angrybirds.apk;/path/to/angrybirdsrio.apk"
 cmake --build build
 ```
 
-Each APK is matched to its game by the library and extracted to `build/games/<id>/`; every game gets its own executable `build/bin/slingshot-<id>`. Recompiling a game needs about 750 MB of memory, so games are recompiled one at a time. Build options:
+Each APK is matched to its game by the library and extracted to `build/games/<id>/`; every game gets its own executable `build/bin/slingshot-<id>`. Recompiling a game needs up to 1.5 GB of memory, so games are recompiled one at a time. Build options:
 
 - `-DSLINGSHOT_DEFAULT_MODS=all|none|<list>`: mods enabled by default, e.g. `"hide-dead-services;offline-shop"`
 - `-DSLINGSHOT_MODS=OFF`: build without mods

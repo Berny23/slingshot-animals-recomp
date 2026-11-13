@@ -42,7 +42,8 @@ int h_dl_iterate_phdr(u32 callback, u32 data) {
     return int32_t(guest_call(callback, {info, 16, data}));
 }
 
-// The unwinder's lookup of the exception index table (PT_ARM_EXIDX).
+// The unwinder's lookup of the exception index table (PT_ARM_EXIDX); libdl's
+// dl_unwind_find_exidx is the same lookup.
 u32 h___gnu_Unwind_Find_exidx(u32, u32 count_out) {
     uint16_t n = 0;
     const u32 ph = lib_program_headers(n);
@@ -128,6 +129,7 @@ RECOMP_REGISTER_IMPORT("setlocale", RECOMP_HLE(h_setlocale));
 RECOMP_REGISTER_IMPORT("dl_iterate_phdr", RECOMP_HLE(h_dl_iterate_phdr));
 RECOMP_REGISTER_IMPORT("syscall", h_syscall);
 RECOMP_REGISTER_IMPORT("__gnu_Unwind_Find_exidx", RECOMP_HLE(h___gnu_Unwind_Find_exidx));
+RECOMP_REGISTER_IMPORT("dl_unwind_find_exidx", RECOMP_HLE(h___gnu_Unwind_Find_exidx));
 RECOMP_REGISTER_IMPORT("raise", RECOMP_HLE(h_raise));
 RECOMP_REGISTER_IMPORT("setjmp", RECOMP_HLE(h_setjmp));
 RECOMP_REGISTER_IMPORT("longjmp", h_longjmp);
