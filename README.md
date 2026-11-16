@@ -12,18 +12,23 @@ Unofficial static recompilation of Rovio's Android *Angry Birds* games. Each gam
 
 | Mod | Games | Description |
 | --- | --- | --- |
-| `wheel-zoom` | Classic | Mouse wheel zooms in levels and scrolls lists in menus |
-| `keyboard` | Classic | Space + W A S D or arrows aims, release shoots (Shift: fine), Space in flight uses the bird's ability. Arrows move the camera, + / - zoom, Z switches the view, R restarts, P pauses, Enter confirms |
-| `gamepad-pointer` | all | Left stick moves a cursor (right stick: fine), A touches, B / Start is Back, triggers zoom |
-| `skip-level-end` | Classic | Tap to skip the wait at the end of a level |
+| `mouse-wheel` | all | Mouse wheel zooms in levels and scrolls menus |
+| `keyboard` | all | Play with the keyboard: Space + W A S D or arrows aims and shoots, R restarts, P pauses |
+| `gamepad-pointer` | all | Play with a gamepad: the left stick moves a cursor, A taps, B is Back |
+| `tap-to-skip` | all | Tap to skip the wait at the end of a level |
 | `fullscreen` | all | F11 toggles fullscreen |
-| `hide-dead-services` | Classic, Space, Star Wars | Hides what only leads to discontinued online services: news, more games, Rovio Account, Daily Challenge, ad videos, the world leaderboard and server-only trophies (Classic), the full story video (Space, Star Wars) |
-| `offline-league` | Classic | Mighty League without servers: progress is kept, and after the Feather League come rounds in the Glass to Master leagues with their levels, opponents, eggs, rewards and trophies. Profile page and emblem editor work |
-| `offline-shop` | Classic | Shop without real money: no gem packs, the Mighty Eagle costs 1500 coins, levels pay coins and gems |
-| `composite-audio` | Star Wars, Star Wars II | Plays the main menu music and the power-up sounds, which these versions of the games no longer play |
-| `offline-assets` | Star Wars II | Starts without downloading: with the downloaded content copied into the data folder (see below), or with silent sounds and simplified theme images in its place |
-| `audio-quality` | Stella | Mixes sound in stereo at 24 kHz, the best of the game's sound files, instead of 16 kHz mono as on Android |
-| `game-statistics` | Classic | Statistics page with the progress to 100 %, the game's counters and its Google Play achievements, with a banner when one is unlocked |
+| `hide-dead-services` | all | Hides buttons and messages of discontinued online services |
+| `offline-league` | Classic | Mighty League without servers |
+| `offline-tournament` | Seasons | Pig Challenge without servers: weeks open one after another, all weeks replayable after the last |
+| `offline-shop` | all | Everything sold for real money can be earned by playing |
+| `composite-audio` | Star Wars, Star Wars II | Plays the menu music and power-up sounds again |
+| `offline-assets` | Star Wars II | Starts without the download server (see below) |
+| `audio-quality` | Stella | Better sound than on Android |
+| `seasonal-menu` | Seasons | The main menu shows a random episode of the current season (Halloween, Christmas, ...). `--mod-option seasonal-menu.season=<name>` picks one |
+| `offline-clock` | Star Wars II | Timed features use the device's clock |
+| `missing-translations` | Rio | Translates texts the game shows only in English |
+| `game-statistics` | all | Statistics page with achievements and progress to 100 % |
+| `samsung-level` | Space, Star Wars II | Content once given only to Samsung devices is open everywhere |
 
 ## Supported versions
 
@@ -40,6 +45,14 @@ APKs with the `armeabi-v7a` library:
 | `stella` | Angry Birds Stella | 1.1.5 (build 1152) | `com.rovio.angrybirdsstella` |
 
 The build checks each library's SHA-256.
+
+Star Wars II downloads its sounds and theme images from a server that is gone; without them it plays silence and draws simplified backgrounds. For the originals, copy `files/assets_service/` from a device installation (`/data/data/com.rovio.angrybirdsstarwarsii.ads/`) to:
+
+```
+~/.local/share/slingshot-animals-recomp/starwars2/internal/files/assets_service/
+├── 16000hz-16bit-mono/    music/ and sfx/ (*.mp3)
+└── images/                android/ (THEME_*.pvr, THEME_*.dat)
+```
 
 ## Build
 
@@ -67,20 +80,11 @@ build/bin/slingshot-<id> [options] [game-dir]
 | `--mod <name>` | Enable only the given mods (repeatable), like `SLINGSHOT_MODS=a,b` |
 | `--no-mod <name>` | Disable a mod |
 | `--no-mods` | Original game without mods |
+| `--mod-option <mod>.<key>=<value>` | A setting for a mod (repeatable), see the mod table |
 | `--locale <ll_CC>` | Game language, e.g. `de_DE` |
 | `--dump-scripts <dir>` | Write the game's scripts and configs out decrypted |
 
 Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`). They are encrypted by the game; copy the folder while the game is not running to back them up.
-
-Star Wars II downloads its sounds and theme images on first start, from a server that is gone. Without them, `offline-assets` plays silence and draws blurred stand-ins for the backgrounds of the Naboo, Theed palace and Trade Federation themes and their blocks. For the originals, copy them from the `files/assets_service/` folder of a device installation (`/data/data/com.rovio.angrybirdsstarwarsii.ads/`) into the data folder:
-
-```
-~/.local/share/slingshot-animals-recomp/starwars2/internal/files/assets_service/
-├── 16000hz-16bit-mono/    music/ and sfx/ (*.mp3)
-└── images/                android/ (THEME_*.pvr, THEME_*.dat)
-```
-
-The game needs nothing else from there; its other downloads are covered by data in the APK.
 
 ## Modding
 

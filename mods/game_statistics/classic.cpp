@@ -14,7 +14,10 @@
 //
 // The progress is the mean of stars, golden eggs, feathers, achievements and,
 // with offline-league, the leagues.
+#include <string>
+
 #include "common/game_scripts.hpp"
+#include "common/statistics.hpp"
 #include "mod.hpp"
 
 namespace {
@@ -47,7 +50,7 @@ local TEXTS = {
         playtime = 'Playtime', birds = 'Birds shot', pigs = 'Pigs popped',
         wood = 'Wood blocks destroyed', ice = 'Ice blocks destroyed', stone = 'Stone blocks destroyed',
         feather_text = 'Collect %s Mighty Eagle feathers', eagle_text = 'Use the Mighty Eagle',
-        hours = '%d h %02d min', unlocked = 'Unlocked', banner = 'Achievement unlocked',
+        unlocked = 'Unlocked', banner = 'Achievement unlocked',
     },
     de = {
         title = 'Statistik', progress = 'Spielfortschritt', stars = 'Sterne',
@@ -56,20 +59,84 @@ local TEXTS = {
         playtime = 'Spielzeit', birds = 'Abgeschossene Vögel', pigs = 'Zerplatzte Schweine',
         wood = 'Zerstörte Holzblöcke', ice = 'Zerstörte Eisblöcke', stone = 'Zerstörte Steinblöcke',
         feather_text = 'Sammle %s Federn des Mächtigen Adlers', eagle_text = 'Setze den Mächtigen Adler ein',
-        hours = '%d Std. %02d Min.', unlocked = 'Freigeschaltet', banner = 'Erfolg freigeschaltet',
+        unlocked = 'Freigeschaltet', banner = 'Erfolg freigeschaltet',
+    },
+    fr = {
+        title = 'Statistiques', progress = 'Progression du jeu', stars = 'Étoiles',
+        eggs = "Œufs d'or", feathers = "Plumes de l'Aigle Vaillant", achievements = 'Succès',
+        leagues = 'Ligues de la Ligue Vaillante', levels = 'Niveaux terminés', score = 'Score total',
+        playtime = 'Temps de jeu', birds = 'Oiseaux lancés', pigs = 'Cochons éclatés',
+        wood = 'Blocs de bois détruits', ice = 'Blocs de glace détruits', stone = 'Blocs de pierre détruits',
+        feather_text = "Collectez %s plumes de l'Aigle Vaillant", eagle_text = "Utilisez l'Aigle Vaillant",
+        unlocked = 'Débloqué', banner = 'Succès débloqué',
+    },
+    it = {
+        title = 'Statistiche', progress = 'Progressi di gioco', stars = 'Stelle',
+        eggs = "Uova d'oro", feathers = 'Piume della Grande Aquila', achievements = 'Obiettivi',
+        leagues = 'Campionati della Grande Lega', levels = 'Livelli completati', score = 'Punteggio totale',
+        playtime = 'Tempo di gioco', birds = 'Uccelli lanciati', pigs = 'Maiali scoppiati',
+        wood = 'Blocchi di legno distrutti', ice = 'Blocchi di ghiaccio distrutti', stone = 'Blocchi di pietra distrutti',
+        feather_text = 'Raccogli %s piume della Grande Aquila', eagle_text = 'Usa la Grande Aquila',
+        unlocked = 'Sbloccato', banner = 'Obiettivo sbloccato',
+    },
+    es = {
+        title = 'Estadísticas', progress = 'Progreso del juego', stars = 'Estrellas',
+        eggs = 'Huevos de oro', feathers = 'Plumas del Águila Poderosa', achievements = 'Logros',
+        leagues = 'Ligas de la Gran Liga', levels = 'Niveles completados', score = 'Puntuación total',
+        playtime = 'Tiempo de juego', birds = 'Pájaros lanzados', pigs = 'Cerdos reventados',
+        wood = 'Bloques de madera destruidos', ice = 'Bloques de hielo destruidos', stone = 'Bloques de piedra destruidos',
+        feather_text = 'Consigue %s plumas del Águila Poderosa', eagle_text = 'Usa el Águila Poderosa',
+        unlocked = 'Desbloqueado', banner = 'Logro desbloqueado',
+    },
+    pt = {
+        title = 'Estatísticas', progress = 'Progresso do jogo', stars = 'Estrelas',
+        eggs = 'Ovos de ouro', feathers = 'Penas da Águia Enorme', achievements = 'Conquistas',
+        leagues = 'Ligas da Liga Poderosa', levels = 'Níveis concluídos', score = 'Pontuação total',
+        playtime = 'Tempo de jogo', birds = 'Pássaros lançados', pigs = 'Porcos estourados',
+        wood = 'Blocos de madeira destruídos', ice = 'Blocos de gelo destruídos', stone = 'Blocos de pedra destruídos',
+        feather_text = 'Colete %s penas da Águia Enorme', eagle_text = 'Use a Águia Enorme',
+        unlocked = 'Desbloqueado', banner = 'Conquista desbloqueada',
+    },
+    ru = {
+        title = 'Статистика', progress = 'Прогресс игры', stars = 'Звезды',
+        eggs = 'Золотые яйца', feathers = 'Перья Могучего орла', achievements = 'Достижения',
+        leagues = 'Лиги Могучей лиги', levels = 'Пройдено уровней', score = 'Общий счет',
+        playtime = 'Время в игре', birds = 'Запущено птиц', pigs = 'Лопнуто свиней',
+        wood = 'Разрушено деревянных блоков', ice = 'Разрушено ледяных блоков', stone = 'Разрушено каменных блоков',
+        feather_text = 'Собери перья Могучего орла: %s', eagle_text = 'Используй Могучего орла',
+        unlocked = 'Получено', banner = 'Достижение получено',
+    },
+    ja = {
+        title = '記録', progress = 'ゲームの進行度', stars = 'スター',
+        eggs = '金の卵', feathers = 'マイティイーグルの羽根', achievements = 'アチーブメント',
+        leagues = 'マイティリーグのリーグ', levels = 'クリアしたレベル', score = '合計スコア',
+        playtime = 'プレイ時間', birds = '飛ばした鳥', pigs = 'やっつけたブタ',
+        wood = '壊した木のブロック', ice = '壊した氷のブロック', stone = '壊した石のブロック',
+        feather_text = 'マイティイーグルの羽根を%s枚集めよう', eagle_text = 'マイティイーグルを使おう',
+        unlocked = 'アンロック済み', banner = 'アチーブメント達成！',
+    },
+    zh_CN = {
+        title = '统计', progress = '游戏进度', stars = '星星',
+        eggs = '金蛋', feathers = '神鹰羽毛', achievements = '成就',
+        leagues = 'Mighty League 联赛', levels = '已完成关卡', score = '总分',
+        playtime = '游戏时间', birds = '发射的小鸟', pigs = '消灭的猪',
+        wood = '摧毁的木块', ice = '摧毁的冰块', stone = '摧毁的石块',
+        feather_text = '收集 %s 根神鹰羽毛', eagle_text = '使用神鹰',
+        unlocked = '已解锁', banner = '成就已解锁',
+    },
+    zh_TW = {
+        title = '數據', progress = '遊戲進度', stars = '星星',
+        eggs = '金蛋', feathers = 'Mighty Eagle 羽毛', achievements = '成就',
+        leagues = 'Mighty League 聯賽', levels = '已完成關卡', score = '總分',
+        playtime = '遊戲時間', birds = '發射的小鳥', pigs = '消滅的豬',
+        wood = '摧毀的木塊', ice = '摧毀的冰塊', stone = '摧毀的石塊',
+        feather_text = '收集 %s 根 Mighty Eagle 羽毛', eagle_text = '使用 Mighty Eagle',
+        unlocked = '已解鎖', banner = '成就已解鎖',
     },
 }
-local function text(key)
-    local language = tostring(res.getLocale()):sub(1, 2)
-    return (TEXTS[language] or TEXTS.en)[key]
-end
-
-local function number(n)
-    local s = tostring(math.floor(n or 0))
-    local sep = tostring(res.getLocale()):sub(1, 2) == 'en' and ',' or '.'
-    local out = s:reverse():gsub('(%d%d%d)', '%1' .. sep):reverse()
-    return (out:gsub('^%' .. sep, ''))
-end
+local function language() return tostring(res.getLocale()) end
+local text = statistics.texts(TEXTS, language)
+local function number(n) return statistics.number(n, language()) end
 
 -- The achievement texts: loaded on first use, their language each time.
 local GROUPS = {
@@ -205,11 +272,10 @@ local function counters()
         total = total + (Statistics.getLevelCountForEpisode(id) or 0)
         score = score + (Statistics.calculateEpisodeScore(id) or 0)
     end
-    local minutes = math.floor(playtime() / 60)
     return {
         {text('levels'), number(done) .. ' / ' .. number(total)},
         {text('score'), number(score)},
-        {text('playtime'), text('hours'):format(math.floor(minutes / 60), minutes % 60)},
+        {text('playtime'), statistics.playtime(playtime(), language())},
         {text('birds'), number(w:getBirdsShot())},
         {text('pigs'), number(w:getPigsDestroyed())},
         {text('wood'), number(w:getWoodBlocksDestroyed())},
@@ -222,8 +288,21 @@ local W, H = 1160, 660
 local PER_PAGE = 6
 local ROW = 31  -- the left column's rows
 
+-- Russian, Japanese and Chinese have fonts of their own (reloadLocaleFonts
+-- picks the one for FONT_BASIC); the other fonts lack their characters.
+-- FONT_HEADER has no accented letters but German ones.
+local function localized(font)
+    local reload = reloadLocaleFonts or (gamelua and gamelua.reloadLocaleFonts)
+    local t = {}
+    if reload then reload(t) end
+    if t.font and t.font ~= 'FONT_BASIC' then return t.font end
+    if font == 'FONT_HEADER' and language():sub(1, 2) ~= 'en' and language():sub(1, 2) ~= 'de' then
+        return 'FONT_BASIC'
+    end
+    return font or 'FONT_BASIC'
+end
 local function label(parent, s, x, y, anchor, scale, font, color)
-    local t = ui.Text:new({font = font or 'FONT_BASIC', hanchor = anchor or 'LEFT'})
+    local t = ui.Text:new({font = localized(font), hanchor = anchor or 'LEFT'})
     t:setScale(scale or 0.56)
     t:setText(s)
     if color then t:setColorParams(color) end
@@ -270,9 +349,7 @@ function GameStatisticsPopup:init(params)
     -- left: the progress and the counters
     local left, right = -W * 0.5 + 60, -30
     local list = parts()
-    local sum = 0
-    for _, p in ipairs(list) do sum = sum + (p[3] > 0 and math.min(p[2] / p[3], 1) or 1) end
-    local total = sum / #list
+    local total = statistics.progress(list)
     local y = -H * 0.5 + 115
     label(self, text('progress'), left, y, 'LEFT', 0.65, 'FONT_HEADER')
     label(self, string.format('%d %%', math.floor(total * 100)), right, y, 'RIGHT', 0.65, 'FONT_HEADER')
@@ -428,7 +505,7 @@ class GameStatistics final : public slingshot::Mod {
 public:
     GameStatistics() {
         slingshot::mods::append_lua("data/scripts/gamelogic.lua", kCounters);
-        slingshot::mods::append_lua("data/scripts/menus/main_menu.lua", kPage);
+        slingshot::mods::append_lua("data/scripts/menus/main_menu.lua", std::string(slingshot::mods::kStatisticsLua) + kPage);
     }
 };
 

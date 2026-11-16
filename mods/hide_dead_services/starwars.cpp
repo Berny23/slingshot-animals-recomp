@@ -1,25 +1,44 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Hides the menu entries that only open discontinued web pages: the full story
-// video in the main menu's arrow menu (a redirect that no longer leads to it).
+// Hides the menu entries of discontinued online services, which only show
+// connection errors or web pages that are gone (Rovio's redirects no longer
+// lead anywhere).
+#include <string>
+
 #include "common/game_scripts.hpp"
+#include "common/hide.hpp"
 #include "mod.hpp"
 
 namespace {
 
-// The arrow menu places its buttons by their order in `children`, so the button is
-// taken out rather than hidden. setMainmenuItemsVisible still sets its `visible`.
-// Without Twitter it was the arrow menu's only button: then the arrow goes too,
-// every frame, as setMainmenuItemsVisible shows it again.
+// ToonsTV in the main menu and episode selection: the game's switch
+// (options.lua), read when the menus are built.
+constexpr const char* kOptions = R"(
+gamelua.channelEnabled = false
+)";
+
+// Main menu. The options slider: push notifications (nothing sends them) and
+// the Telepod toy code entry (codes are checked on Rovio's server). The arrow
+// menu: the full story video. Both sliders place their buttons by their order
+// in `children`, so the buttons are taken out rather than hidden.
+// setMainmenuItemsVisible still sets the video button's `visible`. Without
+// Twitter it was the arrow menu's only button: then the arrow goes too, every
+// frame, as setMainmenuItemsVisible shows it again.
 constexpr const char* kMainMenu = R"(
-local create = MainMenu.createRightOptionSliderButtons
-function MainMenu:createRightOptionSliderButtons(slider, ...)
-    local results = {create(self, slider, ...)}
-    for i, child in ipairs(slider.children) do
-        if child.name == 'trailerButton' then
-            table.remove(slider.children, i)
-            break
-        end
+local function take_out(slider, names)
+    for i = #slider.children, 1, -1 do
+        if names[slider.children[i].name] then table.remove(slider.children, i) end
     end
+end
+local create_options = MainMenu.createOptionsSliderButtons
+function MainMenu:createOptionsSliderButtons(slider, ...)
+    local results = {create_options(self, slider, ...)}
+    take_out(slider, {notificationButton = true, showKeyboardButton = true})
+    return unpack(results)
+end
+local create_right = MainMenu.createRightOptionSliderButtons
+function MainMenu:createRightOptionSliderButtons(slider, ...)
+    local results = {create_right(self, slider, ...)}
+    take_out(slider, {trailerButton = true})
     self.rightSliderEmpty = #slider.children == 0
     return unpack(results)
 end
@@ -43,11 +62,22 @@ function MainMenu:getChild(name, ...)
 end
 )";
 
+// Shop: the banner of Angry Birds' official shop (a store page).
+constexpr const char* kShop = R"(
+hide_buttons(Shop, {toyButton = true})
+)";
+
 class HideDeadServices final : public slingshot::Mod {
 public:
-    HideDeadServices() { slingshot::mods::append_lua("data/scripts/menus/main_menu.lua", kMainMenu); }
+    HideDeadServices() {
+        using slingshot::mods::append_lua;
+        append_lua("data/scripts/options.lua", kOptions);
+        append_lua("data/scripts/menus/main_menu.lua", kMainMenu);
+        append_lua("data/scripts/shop/Shop.lua", std::string(slingshot::mods::kHideLua) + kShop);
+    }
 };
 
 }  // namespace
 
-SLINGSHOT_MOD(HideDeadServices, "hide-dead-services", "Hide the full story video, whose web page is gone");
+SLINGSHOT_MOD(HideDeadServices, "hide-dead-services",
+              "Hide menu buttons of discontinued online services (ToonsTV, toy codes, notifications, web videos, ...)");

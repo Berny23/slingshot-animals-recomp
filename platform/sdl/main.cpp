@@ -3,11 +3,13 @@
 // (what GLSurfaceView, NativeApplication and its Updater do on Android).
 //
 // Usage: slingshot-<game> [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods]
-//                         [--locale <ll_CC>] [--dump-scripts <dir>] [game-dir]
+//                         [--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>]
+//                         [--dump-scripts <dir>] [game-dir]
 //   game-dir holds lib/ and assets/ from the APK (default: where the build extracted it). The mods enabled are the
 //   build's default ones (SLINGSHOT_DEFAULT_MODS), or instead those given with
 //   --mod or SLINGSHOT_MODS=name,name ("all" for every mod); --no-mod takes one
-//   away, --no-mods all of them. The device locale is --locale, else
+//   away, --no-mods all of them. --mod-option passes a setting to a mod (see
+//   README.md for each mod's). The device locale is --locale, else
 //   SLINGSHOT_LOCALE, else the host's (LC_ALL, LC_MESSAGES, LANG).
 //   --dump-scripts writes the game's scripts and configs, decrypted, into <dir>
 //   and exits.
@@ -151,8 +153,8 @@ void list_mods() {
 }
 
 constexpr char kUsage[] =
-    "usage: %s [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods] [--locale <ll_CC>] "
-    "[--dump-scripts <dir>] [game-dir]\n";
+    "usage: %s [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods] "
+    "[--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>] [--dump-scripts <dir>] [game-dir]\n";
 
 // Returns false when the program should exit right away (help, mod list).
 bool parse_args(int argc, char** argv, Options& opt, int& status) {
@@ -170,6 +172,23 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
             removed.push_back(argv[++i]);
         } else if (!std::strcmp(argv[i], "--no-mods")) {
             none = true;
+        } else if (!std::strcmp(argv[i], "--mod-option") && i + 1 < argc) {
+            const std::string arg = argv[++i];
+            const size_t dot = arg.find('.'), eq = arg.find('=');
+            if (dot == std::string::npos || eq == std::string::npos || dot == 0 || eq < dot + 2) {
+                std::fprintf(stderr, "host: --mod-option takes <mod>.<key>=<value>, not '%s'\n", arg.c_str());
+                status = 2;
+                return false;
+            }
+            const std::string mod = arg.substr(0, dot);
+            bool known = false;
+            for (const auto& info : slingshot::available_mods()) known |= mod == info.name;
+            if (!known) {
+                std::fprintf(stderr, "host: unknown mod '%s' (see --list-mods)\n", mod.c_str());
+                status = 1;
+                return false;
+            }
+            slingshot::set_mod_option(mod, arg.substr(dot + 1, eq - dot - 1), arg.substr(eq + 1));
         } else if (!std::strcmp(argv[i], "--locale") && i + 1 < argc) {
             opt.locale = argv[++i];
         } else if (!std::strcmp(argv[i], "--dump-scripts") && i + 1 < argc) {

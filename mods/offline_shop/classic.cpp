@@ -336,6 +336,6 @@ public:
 };
 
 SLINGSHOT_MOD(OfflineShop, "offline-shop",
-              "Shop without real money: no gem packs, Mighty Eagle for coins, coins and gems for completing levels");
+              "The Mighty Eagle costs coins, levels pay more coins and gems; no gem packs");
 
 }  // namespace

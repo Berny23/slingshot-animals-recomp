@@ -5,34 +5,10 @@
 #include <string>
 
 #include "common/game_scripts.hpp"
+#include "common/hide.hpp"
 #include "mod.hpp"
 
 namespace {
-
-// `hide_buttons(Class, names)` hides the named children every frame. They stay in
-// the frame, as layouts read their positions, and menus show some of them again.
-constexpr const char* kHelpers = R"(
-local function hide_in(frame, names)
-    for _, child in ipairs(frame.children or {}) do
-        if names[child.name] then
-            if child.visible ~= false then
-                child:setVisible(false)
-                if child.setEnabled then child:setEnabled(false) end
-            end
-        else
-            hide_in(child, names)
-        end
-    end
-end
-local function hide_buttons(class, names)
-    local update = class.update
-    function class:update(...)
-        local results = {update(self, ...)}
-        hide_in(self, names)
-        return unpack(results)
-    end
-end
-)";
 
 // The buttons at the screen corners (names from data/scripts/menus/*.lua).
 constexpr const char* kCornerButtons = R"(
@@ -221,7 +197,7 @@ class HideDeadServices final : public slingshot::Mod {
 public:
     HideDeadServices() {
         using slingshot::mods::append_lua;
-        const std::string prelude = std::string(kHelpers) + kCornerButtons;
+        const std::string prelude = std::string(slingshot::mods::kHideLua) + kCornerButtons;
         append_lua("data/scripts/menus/main_menu.lua", prelude + kMainMenu);
         append_lua("data/scripts/menus/episode_selection.lua", prelude + "hide_buttons(EpisodeSelection, corner)\n");
         append_lua("data/scripts/menus/level_selection.lua", prelude + "hide_buttons(LevelSelection, corner)\n");

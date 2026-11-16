@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// skip-level-end: a tap skips the wait at the end of a level.
+// tap-to-skip: a tap skips the wait at the end of a level.
 //
 // The game's own skip button shows only after 5 s (levelFailSkipButtonCountDown).
 // A tap on no HUD button does what it does: a won level adds the remaining birds'
@@ -51,11 +51,11 @@ function GameHud:onPointerEvent(event, x, y, ...)
 end
 )";
 
-class SkipLevelEnd final : public slingshot::Mod {
+class TapToSkip final : public slingshot::Mod {
 public:
-    SkipLevelEnd() { slingshot::mods::append_lua("data/scripts/menus/GameHud.lua", kLua); }
+    TapToSkip() { slingshot::mods::append_lua("data/scripts/menus/GameHud.lua", kLua); }
 };
 
 }  // namespace
 
-SLINGSHOT_MOD(SkipLevelEnd, "skip-level-end", "Tap anywhere to skip the wait at the end of a level");
+SLINGSHOT_MOD(TapToSkip, "tap-to-skip", "Tap anywhere to skip the wait at the end of a level");

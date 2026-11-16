@@ -55,6 +55,11 @@ const std::vector<ModInfo>& available_mods();
 // Instantiates the named mods; prints an error and returns false for unknown names.
 bool load_mods(const std::vector<std::string>& names, std::vector<std::unique_ptr<Mod>>& out);
 
+// Mod options: --mod-option <mod>.<key>=<value>, set before the mods are created.
+// mod_option returns the value, or nullptr when it was not given.
+void set_mod_option(const std::string& mod, const std::string& key, const std::string& value);
+const std::string* mod_option(const std::string& mod, const std::string& key);
+
 }  // namespace slingshot
 
 #define SLINGSHOT_MOD(Type, name, description)                                            \
