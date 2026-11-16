@@ -229,13 +229,7 @@ public:
             ctx.input.pointer_up(tap_);
             tap_ = -1;
         }
-        if (ability_ >= 0) {
-            if (down_[kSpace]) return;
-            ctx.input.pointer_up(ability_);
-            ability_ = -1;
-        }
-        if (aim_ >= 0) return aim(s, dt, ctx);
-
+        // P works at any time, as Esc does.
         if (back_ && !down_[kP]) {  // a press shorter than a frame still lasts one
             ctx.input.key(false, android::key::kBack, 0, android::kBuiltInKeyboard);
             back_ = false;
@@ -243,6 +237,12 @@ public:
             ctx.input.key(true, android::key::kBack, 0, android::kBuiltInKeyboard);
             back_ = true;
         }
+        if (ability_ >= 0) {
+            if (down_[kSpace]) return;
+            ctx.input.pointer_up(ability_);
+            ability_ = -1;
+        }
+        if (aim_ >= 0) return aim(s, dt, ctx);
 
         if (s.playing) {
             if (pressed[kSpace]) {

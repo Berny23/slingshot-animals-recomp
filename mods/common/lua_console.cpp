@@ -7,18 +7,16 @@
 // the engine have an empty print).
 #include <cstdio>
 #include <cstdlib>
-#include <optional>
 #include <string>
-#include <string_view>
 
 #include "common/game_scripts.hpp"
+#include "common/script_link.hpp"
 #include "lua_console.hpp"
 #include "recomp/game.hpp"
-#include "recomp/vfs.hpp"
 
 namespace {
 
-constexpr std::string_view kLogPrefix = "cache/slingshot-console-log/";
+constexpr const char* kLogPrefix = "cache/slingshot-console-log/";
 
 std::string console_lua() {
     return std::string(R"(
@@ -96,14 +94,7 @@ end
 const bool registered = [] {
     const char* control = std::getenv("SLINGSHOT_CONTROL");
     if (!control) return false;
-    recomp::vfs_add_virtual_fallback([](const std::string& path) -> std::optional<std::string> {
-        if (path.compare(0, kLogPrefix.size(), kLogPrefix)) return std::nullopt;
-        std::string text;
-        for (size_t i = kLogPrefix.size(); i + 1 < path.size(); i += 2)
-            text += char(std::strtol(path.substr(i, 2).c_str(), nullptr, 16));
-        std::fprintf(stderr, "%s\n", text.c_str());
-        return std::string();
-    });
+    slingshot::mods::on_script_message(kLogPrefix, [](const std::string& text) { std::fprintf(stderr, "%s\n", text.c_str()); });
     slingshot::mods::append_lua(recomp::game.main_script, console_lua());
     return true;
 }();

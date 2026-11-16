@@ -3,8 +3,8 @@
 //
 // Bionic's 32-bit synchronisation objects are tiny (a mutex or condition
 // variable is one int), so they are mapped by guest address to host objects
-// created on first use. The initial guest value selects the mutex type
-// (0 = normal, 0x4000 = recursive, 0x8000 = error checking).
+// created on first use. Every mutex is recursive, whatever its type (the
+// initial guest value: 0 = normal, 0x4000 = recursive, 0x8000 = error checking).
 #include <pthread.h>
 
 #include <atomic>

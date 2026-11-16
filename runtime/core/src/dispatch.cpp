@@ -36,6 +36,7 @@ std::vector<Thunk>& thunks() {
     static std::vector<Thunk> v;
     return v;
 }
+std::mutex g_import_lock;
 std::unordered_map<std::string, uint32_t> g_import_thunks;
 
 std::unordered_map<std::string, hle::HostFn>& import_registry() {
@@ -99,6 +100,7 @@ const char* thunk_name(uint32_t addr) {
 namespace internal {
 
 uint32_t import_thunk(const char* name) {
+    std::lock_guard lk(g_import_lock);  // dlsym calls this from any thread
     auto it = g_import_thunks.find(name);
     if (it != g_import_thunks.end()) return it->second;
     const uint32_t a = make_thunk(hle::find_import(name), name);
@@ -276,6 +278,9 @@ uint32_t guest_call(CPU* c, uint32_t addr, std::initializer_list<uint32_t> args)
 CPU* current_cpu() { return t_cpu; }
 void bind_cpu(CPU* c) { t_cpu = c; }
 
+static std::mutex g_stack_lock;
+static std::unordered_map<CPU*, uint32_t> g_stacks;  // guest stack of each CPU
+
 CPU* create_cpu(uint32_t stack_size) {
     CPU* c = static_cast<CPU*>(std::aligned_alloc(64, (sizeof(CPU) + 63) & ~size_t(63)));
     std::memset(c, 0, sizeof(CPU));
@@ -290,10 +295,23 @@ CPU* create_cpu(uint32_t stack_size) {
     const uint32_t tls = mem::alloc_zeroed(64 * 4);
     st32(tls, tls);
     c->tls = tls;
+    std::lock_guard lk(g_stack_lock);
+    g_stacks[c] = stack;
     return c;
 }
 
-void destroy_cpu(CPU* c) { std::free(c); }
+void destroy_cpu(CPU* c) {
+    {
+        std::lock_guard lk(g_stack_lock);
+        const auto it = g_stacks.find(c);
+        if (it != g_stacks.end()) {
+            mem::free(it->second);
+            g_stacks.erase(it);
+        }
+    }
+    mem::free(c->tls);
+    std::free(c);
+}
 
 // ------------------------------------------------------------------ CPU support for generated code
 static std::mutex g_excl_lock;

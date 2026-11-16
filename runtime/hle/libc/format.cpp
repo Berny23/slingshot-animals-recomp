@@ -40,7 +40,9 @@ std::string guest_format(const char* fmt, ArgReader& args) {
         if (*p == '.') {
             s += *p++;
             if (*p == '*') {
-                s += std::to_string(int32_t(args.u32()));
+                const int32_t precision = int32_t(args.u32());
+                if (precision >= 0) s += std::to_string(precision);
+                else s.pop_back();  // a negative precision is taken as if it were left out
                 ++p;
             } else {
                 while (std::isdigit(uint8_t(*p))) s += *p++;

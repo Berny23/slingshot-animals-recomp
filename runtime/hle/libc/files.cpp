@@ -258,7 +258,10 @@ int h_statfs(u32 path, u32 out) {
 int h_pathconf(u32, int) { return 255; }
 u32 h_getcwd(u32 buf, u32 n) {
     const std::string cwd = game_data_dir();
-    if (n < cwd.size() + 1) return u32(fail(ERANGE));
+    if (n < cwd.size() + 1) {
+        set_guest_errno(ERANGE);
+        return 0;
+    }
     std::memcpy(g_mem + buf, cwd.c_str(), cwd.size() + 1);
     return buf;
 }
@@ -310,7 +313,10 @@ u32 h_opendir(u32 path) {
     std::string hp;
     if (!map_path(path, hp)) return 0;
     DIR* d = ::opendir(hp.c_str());
-    if (!d) return u32(ret(0));
+    if (!d) {
+        set_guest_errno(errno);
+        return 0;
+    }
     const u32 h = mem::alloc_zeroed(16 + kDirentSize);  // and readdir's entry
     std::lock_guard lk(g_dir_lock);
     g_dirs[h] = d;
@@ -354,7 +360,7 @@ u32 h_readdir(u32 h) {
     const int err = h_readdir_r(h, entry, result);
     const u32 r = ld32(result);
     mem::free(result);
-    if (err) errno = err;
+    if (err) set_guest_errno(err);
     return err ? 0 : r;
 }
 
