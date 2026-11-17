@@ -60,7 +60,7 @@ function(slingshot_android_apk id)
                 -DWORK=${CMAKE_CURRENT_BINARY_DIR}/${id}/apk -DOUT=${apk} -DKEYSTORE=${SLINGSHOT_ANDROID_KEYSTORE}
                 -DAPK_TOOL=$<TARGET_FILE:slingshot-apk> -DMIN_SDK=${ANDROID_NATIVE_API_LEVEL} -DTARGET_SDK=${target_sdk}
                 -P "${CMAKE_SOURCE_DIR}/platform/android/package.cmake"
-        DEPENDS slingshot-${id} SDL3::SDL3-shared slingshot-apk "${manifest}" "${GAME_DIR}/.complete"
+        DEPENDS slingshot-${id} SDL3::SDL3-shared slingshot-apk "${manifest}" ${GAME_FILES}
                 "${CMAKE_SOURCE_DIR}/platform/android/package.cmake"
         COMMENT "Packaging ${GAME_TITLE} for Android"
         VERBATIM)
@@ -75,6 +75,7 @@ function(slingshot_switch_nro id)
     set(nro "${CMAKE_BINARY_DIR}/bin/slingshot-${id}.nro")
     add_custom_command(
         OUTPUT "${nro}"
+        COMMAND "${CMAKE_COMMAND}" -E rm -rf "${work}/romfs"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${work}/romfs"
         COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different "${GAME_DIR}/lib" "${work}/romfs/lib"
         COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different "${GAME_DIR}/assets" "${work}/romfs/assets"
@@ -84,7 +85,7 @@ function(slingshot_switch_nro id)
         COMMAND $<TARGET_FILE:slingshot-apk> nx-elf $<TARGET_FILE:slingshot-${id}> "${work}/slingshot-${id}.elf"
         COMMAND "${tools}/elf2nro${CMAKE_HOST_EXECUTABLE_SUFFIX}" "${work}/slingshot-${id}.elf" "${nro}"
                 "--icon=${work}/icon.jpg" "--nacp=${work}/control.nacp" "--romfsdir=${work}/romfs"
-        DEPENDS slingshot-${id} slingshot-apk "${GAME_DIR}/.complete"
+        DEPENDS slingshot-${id} slingshot-apk ${GAME_FILES}
         COMMENT "Packaging ${GAME_TITLE} for the Nintendo Switch"
         VERBATIM)
     add_custom_target(slingshot-${id}-nro ALL DEPENDS "${nro}")
@@ -159,6 +160,29 @@ foreach(game_file IN LISTS game_files)
         COMMENT "Extracting ${GAME_TITLE} from its APK"
         VERBATIM)
 
+    # Optional content the game once downloaded, into assets/: Star Wars II's
+    # files/assets_service/ (GAME_EXTRA_starwars2, mods/offline_assets).
+    set(extra_dir "${GAME_DIR}/assets/assets_service")
+    set(GAME_FILES "${GAME_DIR}/.complete")
+    if(id STREQUAL "starwars2" AND NOT GAME_EXTRA_${id} STREQUAL "")
+        set(extra "${GAME_EXTRA_${id}}")
+        set(extra_depends "${extra}")
+        if(IS_DIRECTORY "${extra}")
+            file(GLOB_RECURSE extra_depends CONFIGURE_DEPENDS "${extra}/*")
+        endif()
+        add_custom_command(
+            OUTPUT "${GAME_DIR}/.extra"
+            COMMAND $<TARGET_FILE:slingshot-apk> assets-service "${extra}" "${extra_dir}"
+            COMMAND "${CMAKE_COMMAND}" -E touch "${GAME_DIR}/.extra"
+            DEPENDS slingshot-apk "${GAME_DIR}/.complete" ${extra_depends}
+            COMMENT "Adding the extra data of ${GAME_TITLE}"
+            VERBATIM)
+        list(APPEND GAME_FILES "${GAME_DIR}/.extra")
+        add_custom_target(slingshot-${id}-extra ALL DEPENDS "${GAME_DIR}/.extra")
+    else()
+        file(REMOVE_RECURSE "${extra_dir}" "${GAME_DIR}/.extra")
+    endif()
+
     # Recompiled code. The asset loaders accept plain files too
     # (runtime/hle/fusion/script_loader.cpp).
     set(gen_dir "${CMAKE_CURRENT_BINARY_DIR}/${id}/generated")
@@ -215,6 +239,9 @@ foreach(game_file IN LISTS game_files)
         endif()
     endif()
     target_link_libraries(${exe} PRIVATE slingshot_host recomp_runtime recomp_game_code_${id})
+    if(TARGET slingshot-${id}-extra)
+        add_dependencies(${exe} slingshot-${id}-extra)
+    endif()
     if(SLINGSHOT_MODS)
         slingshot_add_mods(${exe} ${id})
     endif()

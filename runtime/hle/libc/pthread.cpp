@@ -322,7 +322,9 @@ int h_pthread_equal(u32 a, u32 b) { return a == b; }
 int h_pthread_setname_np(u32, u32 name) {
     char buf[16];
     std::snprintf(buf, sizeof buf, "%s", mem::str(name));
-#ifndef __SWITCH__  // newlib has no thread names
+#if defined(__APPLE__)  // only names the calling thread
+    ::pthread_setname_np(buf);
+#elif !defined(__SWITCH__)  // newlib has no thread names
     ::pthread_setname_np(::pthread_self(), buf);
 #endif
     return 0;

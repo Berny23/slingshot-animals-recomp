@@ -37,6 +37,7 @@ protected:
 
 private:
     void choose_apk();
+    bool ask_extra();
     void start(bool android, bool install, bool nintendo_switch = false);
     void on_finished(bool ok, const QString& message, const QString& path);
     void set_building(bool building);
@@ -49,6 +50,8 @@ private:
     QVector<Game> games_;
     QString apk_;
     int game_ = -1;  // index in games_, -1: none
+    QString extra_;  // Star Wars II's extra data (zip or folder), empty: none
+    bool extra_asked_ = false;
     QPointer<Job> job_;
     QString result_path_;
     bool result_installed_ = false;

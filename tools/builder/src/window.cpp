@@ -371,6 +371,8 @@ void Window::choose_apk() {
 void Window::open_apk(const QString& path) {
     game_ = -1;
     apk_.clear();
+    extra_.clear();
+    extra_asked_ = false;
     build_->setEnabled(false);
     advanced_->hide();
     advanced_panel_->hide();
@@ -398,6 +400,7 @@ void Window::open_apk(const QString& path) {
     game_icon_->setPixmap(icon);
     game_title_->setText(g.title);
     game_detail_->setText("Version " + g.version);
+    game_detail_->setToolTip({});
     game_title_->setToolTip(QDir::toNativeSeparators(path));
     drop_pages_->setCurrentIndex(1);
     message_->hide();
@@ -428,11 +431,49 @@ void Window::open_apk(const QString& path) {
     fit();
 }
 
+// Star Wars II: the content it once downloaded, optional. False: cancelled.
+bool Window::ask_extra() {
+    if (games_[game_].id != "starwars2" || extra_asked_) return true;
+    QMessageBox box(QMessageBox::Question, "Add extra data?",
+                    "Do you have the game's extra data (the <i>assets_service</i> folder)? "
+                    "Add it as a ZIP file or folder.<br><br>"
+                    "Without it, there is no music and some backgrounds are simplified.",
+                    QMessageBox::NoButton, this);
+    box.setTextFormat(Qt::RichText);
+    auto* zip = box.addButton("Choose ZIP…", QMessageBox::AcceptRole);
+    auto* folder = box.addButton("Choose folder…", QMessageBox::AcceptRole);
+    auto* without = box.addButton("Build without", QMessageBox::DestructiveRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(zip);
+    const QString start = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    for (;;) {
+        box.exec();
+        QString path;
+        if (box.clickedButton() == zip)
+            path = QFileDialog::getOpenFileName(this, "Choose the extra data", start, "ZIP archives (*.zip)");
+        else if (box.clickedButton() == folder)
+            path = QFileDialog::getExistingDirectory(this, "Choose the extra data folder", start);
+        else if (box.clickedButton() != without)
+            return false;
+        if (box.clickedButton() != without && path.isEmpty()) continue;  // back to the question
+        extra_ = path.isEmpty() ? QString() : QFileInfo(path).absoluteFilePath();
+        extra_asked_ = true;
+        const Game& g = games_[game_];
+        game_detail_->setText("Version " + g.version +
+                              (extra_.isEmpty() ? QString(", without extra data")
+                                                : ", extra data: " + QFileInfo(extra_).fileName()));
+        game_detail_->setToolTip(QDir::toNativeSeparators(extra_));
+        return true;
+    }
+}
+
 void Window::start(bool android, bool install, bool nintendo_switch) {
     if (game_ < 0 || job_) return;
+    if (!ask_extra()) return;
     Request r;
     r.apk = QFileInfo(apk_).absoluteFilePath();
     r.game = games_[game_];
+    r.extra = extra_;
     r.android = android;
     r.nintendo_switch = nintendo_switch;
     r.install = install;

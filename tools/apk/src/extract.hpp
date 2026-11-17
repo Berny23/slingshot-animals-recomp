@@ -39,4 +39,12 @@ bool extract(ZipReader& apk, const GameSpec& game, const std::filesystem::path& 
 
 bool write_file(const std::filesystem::path& p, const std::vector<uint8_t>& data);
 
+// Star Wars II's downloaded content (files/assets_service/ of an installation)
+// from a zip archive or a folder into `out`, which is emptied first: everything
+// in the folder that holds 16000hz-16bit-mono/ or images/android/, at any depth
+// (the archive or folder may hold files/, assets_service/ or its contents), but
+// the downloaded .7z archives. False
+// with `error` set if there is no such folder.
+bool extract_assets_service(const std::filesystem::path& from, const std::filesystem::path& out, std::string& error);
+
 }  // namespace apk

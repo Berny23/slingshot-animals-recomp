@@ -585,6 +585,7 @@ void Job::run() {
         QStringList args = {"-DGAME_APKS=" + req_.apk, "-DSLINGSHOT_DEFAULT_MODS=" + (req_.all_mods ? QString("all")
                                                                                      : req_.mods.isEmpty() ? QString("none")
                                                                                      : req_.mods.join(';'))};
+        args << "-DGAME_EXTRA_starwars2=" + (req_.game.id == "starwars2" ? req_.extra : QString());
         QString target_dir;
         QStringList targets;
         if (req_.android) {

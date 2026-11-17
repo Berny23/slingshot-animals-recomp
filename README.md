@@ -74,7 +74,7 @@ APKs with the `armeabi-v7a` library:
 
 The build checks each library's SHA-256.
 
-Star Wars II downloads its sounds and theme images from a server that is gone; without them it plays silence and draws simplified backgrounds. For the originals, copy `files/assets_service/` from a device installation (`/data/data/com.rovio.angrybirdsstarwarsii.ads/`) into the game's [save folder](#run), on Linux:
+Star Wars II downloads its sounds and theme images from a server that is gone; without them it has no music and draws placeholder backgrounds. For the originals, take `files/assets_service/` from a device installation (`/data/data/com.rovio.angrybirdsstarwarsii.ads/`). The builder asks for it as a ZIP file or folder when building the game (`-DGAME_EXTRA_starwars2=<zip or folder>` in a CMake build). Alternatively, copy the folder into the game's [save folder](#run), on Linux:
 
 ```
 ~/.local/share/slingshot-animals-recomp/starwars2/internal/files/assets_service/

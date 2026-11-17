@@ -2,6 +2,9 @@
 #include "extract.hpp"
 
 #include <fstream>
+#include <iterator>
+#include <optional>
+#include <utility>
 #include <system_error>
 
 #include "android_res.hpp"
@@ -110,6 +113,93 @@ bool extract(ZipReader& apk, const GameSpec& game, const fs::path& out, std::str
     if (!write_file(lib_out, *lib) || !write_file(stamp, {})) {
         error = "cannot write " + lib_out.string();
         return false;
+    }
+    return true;
+}
+
+namespace {
+
+// Where the content starts in `path`: the position of its first 16000hz-16bit-mono/
+// or images/android/, or npos.
+size_t assets_service_root(const std::string& path) {
+    for (size_t start = 0; start < path.size();) {
+        if (path.compare(start, 19, "16000hz-16bit-mono/") == 0 || path.compare(start, 15, "images/android/") == 0)
+            return start;
+        const size_t slash = path.find('/', start);
+        if (slash == std::string::npos) break;
+        start = slash + 1;
+    }
+    return std::string::npos;
+}
+
+}  // namespace
+
+bool extract_assets_service(const fs::path& from, const fs::path& out, std::string& error) {
+    std::error_code ec;
+    fs::remove_all(out, ec);
+    // Files below the content's root, as (path, read).
+    std::vector<std::pair<std::string, std::function<std::optional<std::vector<uint8_t>>()>>> files;
+    if (fs::is_directory(from, ec)) {
+        // Names from the folder's parent on: the folder may be 16000hz-16bit-mono/ itself.
+        fs::path dir = fs::absolute(from, ec).lexically_normal();
+        if (!dir.has_filename()) dir = dir.parent_path();
+        for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator();
+             it.increment(ec)) {
+            if (!it->is_regular_file(ec)) continue;
+            const fs::path file = it->path();
+            files.emplace_back(file.lexically_relative(dir.parent_path()).generic_string(),
+                               [file]() -> std::optional<std::vector<uint8_t>> {
+                                   std::ifstream in(file, std::ios::binary);
+                                   std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)),
+                                                             std::istreambuf_iterator<char>());
+                                   if (in.bad()) return std::nullopt;
+                                   return data;
+                               });
+        }
+        if (ec) {
+            error = "cannot read " + from.string() + ": " + ec.message();
+            return false;
+        }
+    }
+    ZipReader zip;
+    if (!fs::is_directory(from, ec)) {
+        if (!zip.open(from)) {
+            error = zip.error();
+            return false;
+        }
+        for (const auto& e : zip.entries())
+            if (e.name.back() != '/') files.emplace_back(e.name, [&zip, &e] { return zip.read(e); });
+    }
+    std::string root;
+    bool found = false;
+    for (const auto& [path, read] : files)
+        if (const size_t at = assets_service_root(path); at != std::string::npos) {
+            root = path.substr(0, at);
+            found = true;
+            break;
+        }
+    if (!found) {
+        error = "no 16000hz-16bit-mono/ or images/android/ in " + from.string();
+        return false;
+    }
+    for (const auto& [path, read] : files) {
+        if (path.compare(0, root.size(), root) != 0) continue;
+        const std::string name = path.substr(root.size());
+        // The downloaded archives themselves: the game reads only what it unpacked.
+        if (name.find('/') == std::string::npos && name.size() > 3 && !name.compare(name.size() - 3, 3, ".7z")) continue;
+        if (!safe_name(name)) {
+            error = "unsafe file name: " + path;
+            return false;
+        }
+        const auto data = read();
+        if (!data) {
+            error = "cannot read " + path + (zip.error().empty() ? "" : ": " + zip.error());
+            return false;
+        }
+        if (!write_file(out / fs::path(name), *data)) {
+            error = "cannot write " + (out / fs::path(name)).string();
+            return false;
+        }
     }
     return true;
 }

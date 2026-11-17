@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // offline-assets: starts without Rovio's asset service, with the downloadable content
-// (sounds, theme images) copied into the game's data folder, or with stand-ins for it.
+// (sounds, theme images) copied into the game's data folder or built into the game,
+// or with stand-ins for it.
 //
 // The game downloads the archives 16000hz-16bit-mono.7z and images.7z into
 // files/assets_service/, unpacks them there and stores a hash per archive in its
 // settings (assetData). Offline it starts only with both hashes stored, else it
 // shows "downloading the assets failed" and quits; a missing file it then opens
-// ends the game. Here both archives count as installed, and a file that is not in
-// the data folder is a stand-in: a sound is silence, a theme sheet has every sprite
-// of the original in its size, drawn as a smooth grid of the original's colours
-// (starwars2_sprites.hpp).
+// ends the game. Here both archives count as installed. A file that is not in the
+// data folder comes from the game's assets/assets_service/ (added by the build,
+// GAME_EXTRA_starwars2), else it is a stand-in: a sound is silence, a theme sheet
+// has every sprite of the original in its size, drawn as a smooth grid of the
+// original's colours (starwars2_sprites.hpp).
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -188,6 +190,8 @@ std::optional<std::string> stand_in(const std::string& path) {
     const size_t at = path.find(kAssets);
     if (at == std::string::npos) return std::nullopt;
     const std::string name = path.substr(at + std::strlen(kAssets));
+    if (const auto bundled = recomp::vfs_read_asset("assets_service/" + name))
+        return std::string(bundled->begin(), bundled->end());
     if (!name.compare(0, std::strlen(kSounds), kSounds) && ends_with(name, ".mp3")) {
         static const std::string quiet = silence();
         return quiet;

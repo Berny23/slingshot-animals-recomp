@@ -12,6 +12,7 @@ endif()
 
 # The user supplies the original APKs; nothing from them is part of this repository.
 set(GAME_APKS "" CACHE STRING "APKs of the supported games (games/*/game.json), separated by ;")
+set(GAME_EXTRA_starwars2 "" CACHE PATH "Star Wars II's files/assets_service/ of an installation, as zip or folder (optional)")
 set(GAME_ROOT "${CMAKE_BINARY_DIR}/games" CACHE PATH "Where the APKs' libraries, assets and icons are extracted (<root>/<game id>)")
 option(SLINGSHOT_MODS "Build the mods in mods/ into the executables" ON)
 set(SLINGSHOT_DEFAULT_MODS "all" CACHE STRING

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // slingshot-apk extract <game.apk> <out-dir> <library> <sha256>
 //   Extracts the library, assets/ and the app icon of a supported APK (extract.hpp).
+// slingshot-apk assets-service <zip-or-folder> <out-dir>
+//   Star Wars II's downloaded content, from an installation's files/assets_service/ (extract.hpp).
 // slingshot-apk icons <game.apk>
 //   Lists the app icon's files, the largest first.
 // slingshot-apk pack <out.apk> <base.apk> <classes.dex> <abi> <game-dir> <lib.so>...
@@ -26,11 +28,12 @@ namespace {
 int usage(const char* argv0) {
     std::fprintf(stderr,
                  "usage: %s extract <game.apk> <out-dir> <library> <sha256>\n"
+                 "       %s assets-service <zip-or-folder> <out-dir>\n"
                  "       %s icons <game.apk>\n"
                  "       %s pack <out.apk> <base.apk> <classes.dex> <abi> <game-dir> <lib.so>...\n"
                  "       %s nro-icon <icon.png> <icon.jpg>\n"
                  "       %s nx-elf <in.elf> <out.elf>\n",
-                 argv0, argv0, argv0, argv0, argv0);
+                 argv0, argv0, argv0, argv0, argv0, argv0);
     return 2;
 }
 
@@ -72,6 +75,11 @@ int main(int argc, char** argv) {
         const apk::GameSpec game{"", argv[4], argv[5]};
         std::string error;
         if (!apk::extract(zip, game, argv[3], error)) return fail(std::string(argv[2]) + ": " + error);
+        return 0;
+    }
+    if (cmd == "assets-service" && argc == 4) {
+        std::string error;
+        if (!apk::extract_assets_service(argv[2], argv[3], error)) return fail(error);
         return 0;
     }
     if (cmd == "pack" && argc >= 8) {
