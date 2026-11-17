@@ -32,12 +32,15 @@ protected:
     void dragEnterEvent(QDragEnterEvent* e) override;
     void dropEvent(QDropEvent* e) override;
     void closeEvent(QCloseEvent* e) override;
+    void resizeEvent(QResizeEvent* e) override;
 
 private:
     void choose_apk();
     void start(bool android, bool install);
     void on_finished(bool ok, const QString& message, const QString& path);
     void set_building(bool building);
+    void fit();
+    void pin_height();
     void update_cache_size();
     void clear_cache();
     void show_about();

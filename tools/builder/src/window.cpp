@@ -26,9 +26,11 @@
 #include <QStackedWidget>
 #include <QStandardPaths>
 #include <QStyle>
+#include <QTimer>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <functional>
 #include <thread>
 
@@ -211,7 +213,7 @@ Window::Window() : games_(load_games(source_dir())) {
     connect(advanced_, &QToolButton::toggled, this, [this](bool on) {
         advanced_->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
         advanced_panel_->setVisible(on);
-        adjustSize();
+        fit();
     });
 
     // Progress
@@ -266,7 +268,7 @@ Window::Window() : games_(load_games(source_dir())) {
     connect(details_, &QPushButton::clicked, this, [this] {
         log_->setVisible(!log_->isVisible());
         details_->setText(log_->isVisible() ? "Hide details" : "Show details");
-        adjustSize();
+        fit();
     });
     bottom->addWidget(details_);
     bottom->addStretch();
@@ -385,7 +387,7 @@ void Window::open_apk(const QString& path) {
         drop_pages_->setCurrentIndex(0);
         message_->setText(text);
         message_->show();
-        adjustSize();
+        fit();
     };
     QString error;
     const auto game = identify_apk(path, games_, error);
@@ -428,7 +430,7 @@ void Window::open_apk(const QString& path) {
     build_->setEnabled(true);
     build_menu_->setEnabled(true);
     build_->setFocus();
-    adjustSize();
+    fit();
 }
 
 void Window::start(bool android, bool install) {
@@ -497,7 +499,7 @@ void Window::on_finished(bool ok, const QString& message, const QString& path) {
     if (!ok) details_->show();
     update_cache_size();
     QApplication::alert(this);
-    adjustSize();
+    fit();
 }
 
 void Window::set_building(bool building) {
@@ -510,7 +512,41 @@ void Window::set_building(bool building) {
     clear_cache_->setEnabled(!building);
     advanced_panel_->setEnabled(!building);
     details_->setVisible(true);
+    fit();
+}
+
+// Resizes the window to its content. The height is also pinned with minimum and maximum
+// heights: the window manager may restore an older size (e.g. when a file dialog closes), and
+// Qt sets no minimum height itself for layouts with word-wrapped labels. With the log shown,
+// the window can grow.
+void Window::fit() {
+    layout()->activate();
     adjustSize();
+    pin_height();
+}
+
+void Window::pin_height() {
+    QLayout* l = layout();
+    l->activate();
+    const int h = l->hasHeightForWidth() ? l->totalHeightForWidth(width()) : l->totalSizeHint().height();
+    const int min = log_->isVisible() ? h - log_->sizeHint().height() + log_->minimumHeight() : h;
+    const int max = log_->isVisible() ? QWIDGETSIZE_MAX : h;
+    if (minimumHeight() == min && maximumHeight() == max) return;
+    setMinimumHeight(0);
+    setMaximumHeight(QWIDGETSIZE_MAX);
+    setMinimumHeight(min);
+    setMaximumHeight(max);
+}
+
+void Window::resizeEvent(QResizeEvent* e) {
+    QWidget::resizeEvent(e);
+    if (e->size().width() != e->oldSize().width()) pin_height();  // wrapped labels change their height
+    // A size from the window manager is applied even outside the limits: correct it.
+    if (height() < minimumHeight() || height() > maximumHeight()) {
+        QTimer::singleShot(0, this, [this] {
+            resize(width(), std::clamp(height(), minimumHeight(), maximumHeight()));
+        });
+    }
 }
 
 void Window::update_cache_size() {
