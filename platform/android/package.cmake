@@ -13,6 +13,12 @@ if(CMAKE_HOST_WIN32)
     set(bat ".bat")
 endif()
 set(ENV{JAVA_HOME} "${JDK}")
+# The d8/apksigner wrappers run the first java on PATH, not JAVA_HOME's.
+if(CMAKE_HOST_WIN32)
+    set(ENV{PATH} "${JDK}/bin;$ENV{PATH}")
+else()
+    set(ENV{PATH} "${JDK}/bin:$ENV{PATH}")
+endif()
 
 function(run)
     execute_process(COMMAND ${ARGN} RESULT_VARIABLE r OUTPUT_VARIABLE out ERROR_VARIABLE out)
