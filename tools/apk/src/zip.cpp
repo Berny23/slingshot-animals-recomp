@@ -336,7 +336,7 @@ bool unpack(ZipReader& zip, const std::filesystem::path& dir, std::string& error
             }
             fs::create_directories(out.parent_path(), ec);
             fs::remove(out, ec);
-            const uint16_t type = e.unix_mode & 0170000;
+            [[maybe_unused]] const uint16_t type = e.unix_mode & 0170000;
 #ifndef _WIN32
             if (type == 0120000) {  // symbolic link: the data is its target
                 const fs::path target(std::string(data->begin(), data->end()));

@@ -131,7 +131,7 @@ foreach(game_file IN LISTS game_files)
     add_custom_command(
         OUTPUT "${GAME_DIR}/.complete"
         BYPRODUCTS "${game_lib}" "${GAME_DIR}/icon.png" "${GAME_DIR}/icon.ico"
-        COMMAND slingshot-apk extract "${GAME_APK_${id}}" "${GAME_DIR}" "${GAME_LIBRARY}" "${lib_sha256}"
+        COMMAND $<TARGET_FILE:slingshot-apk> extract "${GAME_APK_${id}}" "${GAME_DIR}" "${GAME_LIBRARY}" "${lib_sha256}"
         DEPENDS slingshot-apk "${GAME_APK_${id}}"
         COMMENT "Extracting ${GAME_TITLE} from its APK"
         VERBATIM)
@@ -164,7 +164,7 @@ foreach(game_file IN LISTS game_files)
     endif()
     add_custom_command(
         OUTPUT ${gen_sources} "${gen_dir}/funcs.hpp"
-        COMMAND abrecomp emit "${game_lib}" "${gen_dir}" --sha256 "${lib_sha256}" ${wraps}
+        COMMAND $<TARGET_FILE:abrecomp> emit "${game_lib}" "${gen_dir}" --sha256 "${lib_sha256}" ${wraps}
         DEPENDS abrecomp "${GAME_DIR}/.complete" "${game_lib}" "${game_file}"
         COMMENT "Recompiling lib${GAME_LIBRARY}.so (${GAME_TITLE})"
         JOB_POOL recompile
