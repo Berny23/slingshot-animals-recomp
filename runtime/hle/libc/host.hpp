@@ -22,6 +22,8 @@ int open(const char* path, uint32_t linux_flags, uint32_t mode);
 int open_null();  // a descriptor that reads nothing (/dev/null)
 int mkdir(const char* path, uint32_t mode);
 int access(const char* path, int mode);
+// rename(2): replaces an existing target (Windows' rename refuses to).
+int rename(const char* from, const char* to);
 int64_t pread(int fd, void* buf, size_t n, int64_t off);
 int fsync(int fd);
 int truncate(int fd, int64_t size);

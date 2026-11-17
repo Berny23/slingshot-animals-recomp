@@ -23,6 +23,9 @@
 #endif
 #if defined(__APPLE__)
 #include <sys/mount.h>
+#elif defined(__SWITCH__)
+#include <switch.h>
+#include <sys/statvfs.h>
 #else
 #include <sys/statfs.h>
 #endif
@@ -144,8 +147,10 @@ timespec clock(int id) {
     // Linux ids: 0 REALTIME, 2 PROCESS_CPUTIME_ID, 3 THREAD_CPUTIME_ID, the rest monotonic or boot time.
     clockid_t h = CLOCK_MONOTONIC;
     if (id == 0 || id == 8 /*REALTIME_ALARM*/) h = CLOCK_REALTIME;
+#ifndef __SWITCH__  // no CPU-time clocks: monotonic
     else if (id == 2) h = CLOCK_PROCESS_CPUTIME_ID;
     else if (id == 3) h = CLOCK_THREAD_CPUTIME_ID;
+#endif
     ::clock_gettime(h, &t);
 #endif
     return t;
@@ -165,6 +170,10 @@ int thread_id() {
 #elif defined(__APPLE__)
     uint64_t id = 0;
     pthread_threadid_np(nullptr, &id);
+    return int(id);
+#elif defined(__SWITCH__)
+    uint64_t id = 0;
+    svcGetThreadId(&id, CUR_THREAD_HANDLE);
     return int(id);
 #else
     return int(::syscall(SYS_gettid));
@@ -188,12 +197,38 @@ int access(const char* path, int mode) {
 #endif
 }
 
+int rename(const char* from, const char* to) {
+#ifdef _WIN32
+    if (MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) return 0;
+    switch (GetLastError()) {
+        case ERROR_FILE_NOT_FOUND:
+        case ERROR_PATH_NOT_FOUND: errno = ENOENT; break;
+        case ERROR_ALREADY_EXISTS:
+        case ERROR_FILE_EXISTS: errno = EEXIST; break;
+        case ERROR_DIR_NOT_EMPTY: errno = ENOTEMPTY; break;
+        case ERROR_NOT_SAME_DEVICE: errno = EXDEV; break;
+        case ERROR_ACCESS_DENIED:
+        case ERROR_SHARING_VIOLATION: errno = EACCES; break;
+        default: errno = EIO; break;
+    }
+    return -1;
+#else
+    return ::rename(from, to);
+#endif
+}
+
 int64_t pread(int fd, void* buf, size_t n, int64_t off) {
 #ifdef _WIN32
     const int64_t pos = ::_lseeki64(fd, 0, SEEK_CUR);
     if (pos < 0 || ::_lseeki64(fd, off, SEEK_SET) < 0) return -1;
     const int r = ::_read(fd, buf, unsigned(n));
     ::_lseeki64(fd, pos, SEEK_SET);
+    return r;
+#elif defined(__SWITCH__)  // newlib has no pread
+    const off_t pos = ::lseek(fd, 0, SEEK_CUR);
+    if (pos < 0 || ::lseek(fd, off_t(off), SEEK_SET) < 0) return -1;
+    const ssize_t r = ::read(fd, buf, n);
+    ::lseek(fd, pos, SEEK_SET);
     return r;
 #else
     return ::pread(fd, buf, n, off_t(off));
@@ -219,6 +254,10 @@ int truncate(int fd, int64_t size) {
 int pipe(int fds[2]) {
 #ifdef _WIN32
     return ::_pipe(fds, 65536, O_BINARY | O_NOINHERIT);
+#elif defined(__SWITCH__)
+    (void)fds;
+    errno = ENOSYS;  // no pipes on the console
+    return -1;
 #else
     return ::pipe(fds);
 #endif
@@ -371,6 +410,16 @@ bool statfs(const char* path, DiskSpace& out) {
     out.blocks = total.QuadPart / out.bsize;
     out.bfree = free.QuadPart / out.bsize;
     out.bavail = avail.QuadPart / out.bsize;
+    return true;
+#elif defined(__SWITCH__)
+    struct ::statvfs s;
+    if (::statvfs(path, &s) != 0) return false;
+    out.bsize = uint32_t(s.f_frsize ? s.f_frsize : s.f_bsize);
+    out.blocks = uint64_t(s.f_blocks);
+    out.bfree = uint64_t(s.f_bfree);
+    out.bavail = uint64_t(s.f_bavail);
+    out.files = uint64_t(s.f_files);
+    out.ffree = uint64_t(s.f_ffree);
     return true;
 #else
     struct ::statfs s;
