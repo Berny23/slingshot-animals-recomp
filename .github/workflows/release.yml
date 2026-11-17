@@ -30,7 +30,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Qt (Linux, macOS)
         if: runner.os != 'Windows'
@@ -134,7 +134,7 @@ jobs:
           mkdir dist
           ditto -c -k --keepParent "$app" "dist/slingshot-builder-${{ matrix.package }}.zip"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.package }}
           path: dist/*
@@ -143,11 +143,11 @@ jobs:
     needs: builder
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
