@@ -23,14 +23,14 @@ jobs:
             package: linux-x86_64
           - os: windows-2022
             package: windows-x86_64
-          - os: macos-14
+          - os: macos-15
             package: macos-universal
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Qt (Linux, macOS)
         if: runner.os != 'Windows'
@@ -134,7 +134,7 @@ jobs:
           mkdir dist
           ditto -c -k --keepParent "$app" "dist/slingshot-builder-${{ matrix.package }}.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.package }}
           path: dist/*
@@ -143,7 +143,7 @@ jobs:
     needs: builder
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
