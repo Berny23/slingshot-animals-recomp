@@ -340,6 +340,9 @@ int main(int argc, char** argv) {
     // Mouse and touch are separate inputs: no synthetic events in either direction.
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+    // Linear output as on Android: Windows drivers otherwise may pick an sRGB framebuffer
+    // that brightens every colour.
+    SDL_SetHint(SDL_HINT_OPENGL_FORCE_SRGB_FRAMEBUFFER, "0");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "host: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -388,6 +391,11 @@ int main(int argc, char** argv) {
         SDL_DestroySurface(icon);
     }
     SDL_GL_SetSwapInterval(1);
+    // Where the driver still hands out an sRGB framebuffer, its encoding is switched off.
+    if (desktop_gl || SDL_GL_ExtensionSupported("GL_EXT_sRGB_write_control")) {
+        if (auto disable = reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glDisable")))
+            disable(0x8DB9);  // GL_FRAMEBUFFER_SRGB
+    }
     recomp::gles::set_loader(gl_loader);
     recomp::gles::set_desktop_gl(desktop_gl);
     {
