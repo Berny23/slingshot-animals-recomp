@@ -418,9 +418,9 @@ void thread_report() {
 }  // namespace
 
 void request_thread_report(pthread_t thread) {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__SWITCH__)
     (void)thread;
-    std::fprintf(stderr, "recomp: thread reports are not supported on Windows\n");
+    std::fprintf(stderr, "recomp: thread reports need POSIX signals\n");
 #else
     pthread_kill(thread, SIGUSR1);
 #endif

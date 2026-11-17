@@ -42,6 +42,7 @@ add_executable(slingshot-builder
     src/main.cpp
     src/apk_match.cpp
     src/catalog.cpp
+    src/devkitpro.cpp
     src/downloads.cpp
     src/install.cpp
     src/job.cpp

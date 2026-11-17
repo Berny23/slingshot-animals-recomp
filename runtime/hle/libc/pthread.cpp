@@ -6,6 +6,9 @@
 // created on first use. Every mutex is recursive, whatever its type (the
 // initial guest value: 0 = normal, 0x4000 = recursive, 0x8000 = error checking).
 #include <pthread.h>
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
 
 #include <atomic>
 #include <cerrno>
@@ -232,6 +235,20 @@ std::unordered_map<u32, std::shared_ptr<Thread>> g_threads;  // joinable threads
 std::atomic<u32> g_next_thread{2};
 thread_local u32 t_self = 1;  // main thread
 
+void run_thread(const std::shared_ptr<Thread>& t, u32 id, u32 start, u32 arg, u32 stack) {
+    CPU* c = create_cpu(stack);
+    bind_cpu(c);
+    t_self = id;
+    const u32 result = guest_call(c, start, {arg});
+    run_key_destructors();
+    bind_cpu(nullptr);
+    destroy_cpu(c);
+    std::lock_guard lk(t->lock);
+    t->result = result;
+    t->done = true;
+    t->cv.notify_all();
+}
+
 int h_pthread_create(u32 out, u32 attr, u32 start, u32 arg) {
     u32 stack = 1u << 20;
     if (attr && ld32(attr + 8) >= 64 * 1024) stack = ld32(attr + 8);
@@ -243,19 +260,34 @@ int h_pthread_create(u32 out, u32 attr, u32 start, u32 arg) {
         g_threads[id] = t;
     }
     st32(out, id);  // before the thread runs, as bionic does
-    std::thread([t, id, start, arg, stack] {
-        CPU* c = create_cpu(stack);
-        bind_cpu(c);
-        t_self = id;
-        const u32 result = guest_call(c, start, {arg});
-        run_key_destructors();
-        bind_cpu(nullptr);
-        destroy_cpu(c);
-        std::lock_guard lk(t->lock);
-        t->result = result;
-        t->done = true;
-        t->cv.notify_all();
-    }).detach();
+#ifdef __SWITCH__
+    // libnx's default thread stack is small for recompiled code, and new threads stay
+    // on the creating thread's core: 4 MiB, and cores 1 and 2 in turn (0 runs the game loop).
+    struct Start {
+        std::shared_ptr<Thread> t;
+        u32 id, start, arg, stack;
+    };
+    auto* s = new Start{t, id, start, arg, stack};
+    pthread_attr_t a;
+    pthread_attr_init(&a);
+    pthread_attr_setstacksize(&a, 4u << 20);
+    pthread_attr_setdetachstate(&a, PTHREAD_CREATE_DETACHED);
+    pthread_t handle;
+    const int err = pthread_create(&handle, &a, [](void* p) -> void* {
+        std::unique_ptr<Start> s(static_cast<Start*>(p));
+        static std::atomic<int> next_core{0};
+        svcSetThreadCoreMask(CUR_THREAD_HANDLE, 1 + next_core++ % 2, 0x7);
+        run_thread(s->t, s->id, s->start, s->arg, s->stack);
+        return nullptr;
+    }, s);
+    pthread_attr_destroy(&a);
+    if (err) {
+        delete s;
+        return EAGAIN;
+    }
+#else
+    std::thread([t, id, start, arg, stack] { run_thread(t, id, start, arg, stack); }).detach();
+#endif
     return 0;
 }
 int h_pthread_join(u32 id, u32 retval) {
@@ -290,7 +322,9 @@ int h_pthread_equal(u32 a, u32 b) { return a == b; }
 int h_pthread_setname_np(u32, u32 name) {
     char buf[16];
     std::snprintf(buf, sizeof buf, "%s", mem::str(name));
+#ifndef __SWITCH__  // newlib has no thread names
     ::pthread_setname_np(::pthread_self(), buf);
+#endif
     return 0;
 }
 int h_pthread_getschedparam(u32, u32 policy, u32 param) {

@@ -208,6 +208,9 @@ Window::Window() : games_(load_games(source_dir())) {
                                "connected by USB with USB debugging turned on. Without a device, the APK is saved "
                                "to your Downloads folder.",
                                advanced_panel_));
+    adv->addWidget(small_label("<b>Nintendo Switch:</b> needs a console that runs homebrew. Copy the .nro file "
+                               "into the folder switch on the SD card and start it from the Homebrew Menu.",
+                               advanced_panel_));
     advanced_panel_->hide();
     root->addWidget(advanced_panel_);
     connect(advanced_, &QToolButton::toggled, this, [this](bool on) {
@@ -309,6 +312,8 @@ Window::Window() : games_(load_games(source_dir())) {
     menu->addSeparator();
     menu->addAction("Build for Android (install on a connected device)", this, [this] { start(true, true); });
     menu->addAction("Build Android APK only…", this, [this] { start(true, false); });
+    menu->addSeparator();
+    menu->addAction("Build for Nintendo Switch (homebrew)…", this, [this] { start(false, false, true); });
     build_->setMenu(menu);
     bottom->addWidget(build_);
     root->addLayout(bottom);
@@ -423,12 +428,13 @@ void Window::open_apk(const QString& path) {
     fit();
 }
 
-void Window::start(bool android, bool install) {
+void Window::start(bool android, bool install, bool nintendo_switch) {
     if (game_ < 0 || job_) return;
     Request r;
     r.apk = QFileInfo(apk_).absoluteFilePath();
     r.game = games_[game_];
     r.android = android;
+    r.nintendo_switch = nintendo_switch;
     r.install = install;
     r.all_mods = true;
     for (QCheckBox* box : mod_boxes_) {
@@ -436,7 +442,12 @@ void Window::start(bool android, bool install) {
         else r.all_mods = false;
     }
     if (!install) {
-        if (android) {
+        if (nintendo_switch) {
+            const QString suggestion = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) +
+                                       "/slingshot-" + r.game.id + ".nro";
+            r.output = QFileDialog::getSaveFileName(this, "Save the Nintendo Switch homebrew", suggestion,
+                                                    "Switch homebrew (*.nro)");
+        } else if (android) {
             const QString suggestion =
                 QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) + "/" + r.game.title + ".apk";
             r.output = QFileDialog::getSaveFileName(this, "Save the Android package", suggestion,
@@ -616,9 +627,14 @@ void Window::show_about() {
         "<tr><td>llvm-mingw (Windows)</td><td>&nbsp;Apache 2.0 with LLVM exception, mingw-w64 licenses</td></tr>"
         "<tr><td>Android NDK, SDK tools</td><td>&nbsp;Android Software Development Kit License</td></tr>"
         "<tr><td>Eclipse Temurin (Java)</td><td>&nbsp;GPL 2.0 with Classpath Exception</td></tr>"
+        "<tr><td>devkitA64 (GCC, binutils, newlib)</td><td>&nbsp;GPL 3.0 with runtime exceptions, newlib licenses</td></tr>"
+        "<tr><td>libnx, switch-tools</td><td>&nbsp;ISC</td></tr>"
+        "<tr><td>SDL 2 (Switch)</td><td>&nbsp;zlib License</td></tr>"
+        "<tr><td>Mesa, libdrm (Switch)</td><td>&nbsp;MIT</td></tr>"
         "</table>"
         "<p>Build tools are downloaded from their official sources when needed and checked "
-        "against pinned SHA-256 hashes.</p>");
+        "against pinned SHA-256 hashes; devkitPro's packages against the hashes in devkitPro's "
+        "package lists.</p>");
     layout->addWidget(text);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);

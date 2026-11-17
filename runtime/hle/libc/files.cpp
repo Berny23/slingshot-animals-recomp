@@ -221,7 +221,7 @@ int h_remove(u32 path) {
 int h_rename(u32 a, u32 b) {
     std::string ha, hb;
     if (!map_path(a, ha) || !map_path(b, hb)) return -1;
-    return ret(::rename(ha.c_str(), hb.c_str()));
+    return ret(host::rename(ha.c_str(), hb.c_str()));
 }
 int h_chmod(u32 path, u32 mode) {
     std::string hp;

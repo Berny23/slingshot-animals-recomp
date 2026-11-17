@@ -296,10 +296,19 @@ local function unique(name)
     serial = serial + 1
     return name .. serial
 end
+-- Sizes are for the 1024x768 fonts and sprites at a height of 720; larger screens load the
+-- 2048x1536 ones. Measured: 'MMMMMMMMMM' in the basic font is 254 wide, BTN_X 96.
+local text_k, sprite_k = 1, 1
+local function measure_sets()
+    local t = ui.Text:new({name = unique('measure'), group = '', text = 'MMMMMMMMMM', font = g.getFontBasic})
+    local ok, sw = pcall(g.res.getSpriteBounds, 'BTN_X')
+    text_k = statistics.set_factor((t:getWidth() or 0) * (t.scaleX or 1), 254)
+    sprite_k = statistics.set_factor(ok and sw, 96)
+end
 local function label(parent, s, x, y, anchor, font, max_width, scale)
     local t = ui.Text:new({name = unique('label'), group = '', text = tostring(s), font = font or g.getFontBasic,
                            hanchor = anchor or 'LEFT', vanchor = 'TOP'})
-    scale = scale or 1
+    scale = (scale or 1) * text_k * g.screenHeight / 720
     t:setScale(scale)
     local w = t:getWidth() * scale
     if max_width and w > max_width then t:setScale(scale * max_width / w) end
@@ -318,7 +327,8 @@ local function image(parent, sprite, x, y, scale)
     local i = ui.Image:new({name = unique('image')})
     i:setImage(sprite)
     i.x, i.y = x, y
-    i.scaleX, i.scaleY = scale or 1, scale or 1
+    scale = (scale or 1) * sprite_k
+    i.scaleX, i.scaleY = scale, scale
     parent:addChild(i)
     return i
 end
@@ -327,7 +337,9 @@ local function button(parent, value, sprite, x, y, scale)
     b.name = unique('button')
     b:setImage(sprite)
     b.x, b.y = x, y
-    b.scaleX, b.scaleY = scale or 1, scale or 1
+    scale = (scale or 1) * sprite_k
+    -- A button returns to minScale after a press.
+    b.scaleX, b.scaleY, b.minScale, b.maxScale = scale, scale, scale, scale * 1.1
     b.returnValue = value
     parent:addChild(b)
     return b
@@ -338,6 +350,7 @@ GameStatisticsPage = g.ui.Frame:inherit()
 function GameStatisticsPage:init()
     self.name = 'gameStatisticsPage'
     pcall(g.gameStatisticsCatchUp)
+    measure_sets()
     self.requireInput = true
     local W, H = g.screenWidth, g.screenHeight
     local s = H / 720
@@ -467,7 +480,7 @@ local function add_button(menu)
         end
         frame:addChild(b)
     end
-    b.scaleX, b.scaleY = options.scaleX, options.scaleY
+    statistics.match_button(b, options)
     b.x, b.y = options.x, g.screenHeight - options.y
 end
 local layout = MainMenu.layout

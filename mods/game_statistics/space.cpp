@@ -330,9 +330,20 @@ local function unique(name)
     serial = serial + 1
     return name .. serial
 end
+-- Sizes are for a height of 720 (statistics.set_factor). Measured there: 'MMMMMMMMMM'
+-- in the small font is 192 wide, BTN_ACHIEVEMENTS 82.
+local text_k, sprite_k = 1, 1
+local function measure_sets()
+    local t = ui.Text:new(unique('measure'), 'MMMMMMMMMM', nil, getFontSmall, 'LEFT', 'TOP')
+    local ok, w = pcall(res.getSpriteBounds, 'BTN_ACHIEVEMENTS')
+    text_k = statistics.set_factor(t.w, 192)
+    sprite_k = statistics.set_factor(ok and w, 82)
+end
 local function label(parent, s, x, y, anchor, font, max_width)
     local t = ui.Text:new(unique('label'), tostring(s), nil, font or getFontSmall, anchor or 'LEFT', 'TOP')
-    if max_width and (t.w or 0) > max_width then t:setScale(max_width / t.w) end
+    local k = text_k * screenHeight / 720
+    if max_width and (t.w or 0) * k > max_width then k = max_width / t.w end
+    t:setScale(k)
     t.x, t.y = x, y
     parent:addChild(t)
     return t
@@ -348,7 +359,8 @@ local function image(parent, sprite, x, y, scale)
     local i = ui.Image:new(unique('image'))
     i:setImage(sprite)
     i.x, i.y = x, y
-    i.scaleX, i.scaleY = scale or 1, scale or 1
+    scale = (scale or 1) * sprite_k
+    i.scaleX, i.scaleY = scale, scale
     parent:addChild(i)
     return i
 end
@@ -356,7 +368,9 @@ local function button(parent, name, sprite, x, y, scale)
     local b = ui.ScalableButton:new(name)
     b:setImage(sprite)
     b.x, b.y = x, y
-    b.scaleX, b.scaleY = scale or 1, scale or 1
+    scale = (scale or 1) * sprite_k
+    -- A button returns to minScale after a press.
+    b.scaleX, b.scaleY, b.minScale, b.maxScale = scale, scale, scale, scale * 1.1
     b.returnValue = name
     parent:addChild(b)
     return b
@@ -366,6 +380,7 @@ GameStatisticsPage = lua.Class.create(ui.Frame)
 
 function GameStatisticsPage:init()
     ui.Frame.init(self, 'gameStatisticsPage')
+    measure_sets()
     local W, H = screenWidth, screenHeight
     self.x, self.y, self.w, self.h = 0, 0, W, H
     rect(self, 0, 0, W, H, 0, 0, 0, 0.6)
@@ -412,8 +427,8 @@ function GameStatisticsPage:init()
     label(self, number(count) .. ' / ' .. number(#self.list), self.area.x1, self.area.y, 'RIGHT', getFontBasic)
     self.pages = math.ceil(#self.list / PER_PAGE)
     local by = H * 0.86
-    self.back = button(self, 'STATISTICS_BACK', 'BTN_ARROW_LEFT_SMALL', self.area.x0 + 30 * s, by, 0.6 * s)
-    self.forward = button(self, 'STATISTICS_FORWARD', 'BTN_ARROW_RIGHT_SMALL', self.area.x1 - 30 * s, by, 0.6 * s)
+    self.back = button(self, 'STATISTICS_BACK', 'BTN_ARROW_LEFT', self.area.x0 + 30 * s, by, 0.6 * s)
+    self.forward = button(self, 'STATISTICS_FORWARD', 'BTN_ARROW_RIGHT', self.area.x1 - 30 * s, by, 0.6 * s)
     self.pageText = label(self, '', (self.area.x0 + self.area.x1) / 2, by - 12 * s, 'HCENTER')
     self:showPage(1)
 end
@@ -442,7 +457,7 @@ function GameStatisticsPage:showPage(page)
         local status_w = 0
         if status then
             local t = label(rows, status, area.x1, y + 4 * s, 'RIGHT')
-            status_w = (t.w or 0) + 12 * s
+            status_w = (t.w or 0) * t.scaleX + 12 * s
         end
         label(rows, name, area.x0 + 56 * s, y, 'LEFT', getFontBasic, area.x1 - area.x0 - 56 * s - status_w)
         label(rows, info, area.x0 + 56 * s, y + 30 * s, 'LEFT', getFontSmall, area.x1 - area.x0 - 56 * s)
@@ -477,6 +492,7 @@ local BANNER_TIME, BANNER_SLIDE = 4, 0.3
 local Banner = lua.Class.create(ui.Frame)
 function Banner:init(achievement)
     ui.Frame.init(self, unique('gameStatisticsBanner'))
+    measure_sets()
     local s = ReferenceScaler.getWorldScale(true)
     local name = gameStatisticsAchievementName(achievement)
     local caption = label(self, text('banner'), 0, 0, 'LEFT', getFontSmall)
@@ -547,7 +563,7 @@ function menu.MainMenu:layout(...)
     local results = {layout(self, ...)}
     local b, options = self:getChild('statisticsButton'), self:getChild('optionsButton')
     if b and options then
-        b.scaleX, b.scaleY = options.scaleX, options.scaleY
+        statistics.match_button(b, options)
         b.x, b.y = options.x, screenHeight - options.y
     end
     return unpack(results)

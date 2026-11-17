@@ -67,6 +67,29 @@ function(slingshot_android_apk id)
     add_custom_target(slingshot-${id}-apk ALL DEPENDS "${apk}")
 endfunction()
 
+# Nintendo Switch: bin/slingshot-<id>.nro, a homebrew with the game's files as its romfs.
+function(slingshot_switch_nro id)
+    set(tools "${DEVKITPRO}/tools/bin")
+    # Only the library and assets/ (the game directory holds the build's files too).
+    set(work "${CMAKE_BINARY_DIR}/switch/${id}")
+    set(nro "${CMAKE_BINARY_DIR}/bin/slingshot-${id}.nro")
+    add_custom_command(
+        OUTPUT "${nro}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${work}/romfs"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different "${GAME_DIR}/lib" "${work}/romfs/lib"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different "${GAME_DIR}/assets" "${work}/romfs/assets"
+        COMMAND $<TARGET_FILE:slingshot-apk> nro-icon "${GAME_DIR}/icon.png" "${work}/icon.jpg"
+        COMMAND "${tools}/nacptool${CMAKE_HOST_EXECUTABLE_SUFFIX}" --create "${GAME_TITLE}" slingshot-animals-recomp
+                "${GAME_VERSION}" "${work}/control.nacp"
+        COMMAND $<TARGET_FILE:slingshot-apk> nx-elf $<TARGET_FILE:slingshot-${id}> "${work}/slingshot-${id}.elf"
+        COMMAND "${tools}/elf2nro${CMAKE_HOST_EXECUTABLE_SUFFIX}" "${work}/slingshot-${id}.elf" "${nro}"
+                "--icon=${work}/icon.jpg" "--nacp=${work}/control.nacp" "--romfsdir=${work}/romfs"
+        DEPENDS slingshot-${id} slingshot-apk "${GAME_DIR}/.complete"
+        COMMENT "Packaging ${GAME_TITLE} for the Nintendo Switch"
+        VERBATIM)
+    add_custom_target(slingshot-${id}-nro ALL DEPENDS "${nro}")
+endfunction()
+
 file(GLOB game_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*/game.json")
 set(built_games "")
 foreach(game_file IN LISTS game_files)
@@ -186,9 +209,10 @@ foreach(game_file IN LISTS game_files)
         target_link_options(${exe} PRIVATE $<$<NOT:$<CONFIG:Debug>>:-s>)  # no debug info inside the APK
     else()
         add_executable(${exe} ${sources})
-        set_target_properties(${exe} PROPERTIES
-            ENABLE_EXPORTS ON  # symbol names in crash backtraces
-            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+        set_target_properties(${exe} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+        if(NOT NINTENDO_SWITCH)
+            set_target_properties(${exe} PROPERTIES ENABLE_EXPORTS ON)  # symbol names in crash backtraces
+        endif()
     endif()
     target_link_libraries(${exe} PRIVATE slingshot_host recomp_runtime recomp_game_code_${id})
     if(SLINGSHOT_MODS)
@@ -211,6 +235,9 @@ foreach(game_file IN LISTS game_files)
     endif()
     if(ANDROID AND SLINGSHOT_ANDROID_SDK)
         slingshot_android_apk(${id})
+    endif()
+    if(NINTENDO_SWITCH)
+        slingshot_switch_nro(${id})
     endif()
 endforeach()
 

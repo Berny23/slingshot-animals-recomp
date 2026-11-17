@@ -7,6 +7,10 @@ if(SLINGSHOT_SDL3_INSTALL)
 else()
     set(exclude EXCLUDE_FROM_ALL)
 endif()
+# Nintendo Switch: only the headers (platform/switch runs SDL3's API on SDL2).
+if(NINTENDO_SWITCH)
+    set(exclude ${exclude} SOURCE_SUBDIR headers-only)
+endif()
 FetchContent_Declare(SDL3
     URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-3.4.20.tar.gz
     URL_HASH SHA256=f3bb06f55bed9557227a700af2ea62e49497ebdf58037732a731a5fb3ef8581f

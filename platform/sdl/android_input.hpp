@@ -57,6 +57,10 @@ class AndroidInput {
 public:
     static constexpr int kMaxPointers = 10;
 
+    // Surface pixels per game pixel (recomp::gles::set_screen_scale); touch and
+    // hover positions are divided by it on the way to the game.
+    void set_screen_scale(float scale) { screen_scale_ = scale > 0 ? scale : 1; }
+
     // ---- touch screen (MotionEvent). Positions are surface pixels.
     // A new pointer gets the lowest free id, as on Android; -1 if all are taken.
     int pointer_down(float x, float y);
@@ -95,6 +99,7 @@ private:
 
     std::array<Pointer, kMaxPointers> pointers_{};
     bool moved_ = false;  // a MOVE is pending (Android batches moves per frame)
+    float screen_scale_ = 1;
     std::vector<Event> queue_;
     uint32_t handler_ = 0;  // the MyInputHandler object
 };

@@ -37,4 +37,8 @@ QString fetch(const Download& d, const FetchContext& ctx, QString& error);
 // The unpacked folder of `d` if it is already in the cache.
 QString cached(const Download& d);
 
+// Downloads `url` to `path`, checked against `sha256` (none if empty).
+bool download_checked(const QString& url, const QString& sha256, qint64 size, const QString& name,
+                      const QString& path, const FetchContext& ctx, QString& error);
+
 }  // namespace builder

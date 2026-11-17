@@ -37,7 +37,7 @@ protected:
 
 private:
     void choose_apk();
-    void start(bool android, bool install);
+    void start(bool android, bool install, bool nintendo_switch = false);
     void on_finished(bool ok, const QString& message, const QString& path);
     void set_building(bool building);
     void fit();

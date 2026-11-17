@@ -10,8 +10,11 @@
 #define SDL_USE_BUILTIN_OPENGL_DEFINITIONS 1
 #include <SDL3/SDL_opengles2.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <type_traits>
@@ -40,6 +43,12 @@ void set_desktop_gl(bool desktop) {
     }
 }
 bool desktop_gl() { return g_desktop; }
+
+namespace {
+float g_screen_scale = 1;
+}
+void set_screen_scale(float scale) { g_screen_scale = scale > 0 ? scale : 1; }
+float screen_scale() { return g_screen_scale; }
 
 std::string host_shader(const std::string& es) {
     if (!g_desktop) return es;
@@ -97,14 +106,68 @@ void h_glEnable(u32 c) { GL(glEnable, void(GLenum)); fn(c); }
 void h_glFinish() { GL(glFinish, void()); fn(); }
 void h_glFlush() { GL(glFlush, void()); fn(); }
 void h_glFrontFace(u32 m) { GL(glFrontFace, void(GLenum)); fn(m); }
-void h_glGetIntegerv(u32 p, u32 out) { GL(glGetIntegerv, void(GLenum, GLint*)); fn(p, static_cast<GLint*>(W(out))); }
 u32 h_glGetError() { GL(glGetError, GLenum()); return fn(); }
 void h_glPixelStorei(u32 p, int v) { GL(glPixelStorei, void(GLenum, GLint)); fn(p, v); }
-void h_glScissor(int x, int y, int w, int h) { GL(glScissor, void(GLint, GLint, GLsizei, GLsizei)); fn(x, y, w, h); }
-void h_glViewport(int x, int y, int w, int h) { GL(glViewport, void(GLint, GLint, GLsizei, GLsizei)); fn(x, y, w, h); }
+// Viewport and scissor as the game set them; on the screen (framebuffer 0) they
+// are scaled by gles::set_screen_scale, also when the binding changes later.
+struct Rect {
+    int x, y, w, h;
+    bool set;
+};
+Rect g_viewport{}, g_scissor{};
+bool g_on_screen = true;
+void apply_rect(void (*fn)(GLint, GLint, GLsizei, GLsizei), const Rect& r) {
+    if (!r.set) return;
+    const float k = g_on_screen ? gles::screen_scale() : 1;
+    if (k == 1) {
+        fn(r.x, r.y, r.w, r.h);
+        return;
+    }
+    const int x0 = int(std::lround(r.x * k)), y0 = int(std::lround(r.y * k));
+    fn(x0, y0, int(std::lround((r.x + r.w) * k)) - x0, int(std::lround((r.y + r.h) * k)) - y0);
+}
+void h_glScissor(int x, int y, int w, int h) {
+    GL(glScissor, void(GLint, GLint, GLsizei, GLsizei));
+    g_scissor = {x, y, w, h, true};
+    apply_rect(fn, g_scissor);
+}
+void h_glViewport(int x, int y, int w, int h) {
+    GL(glViewport, void(GLint, GLint, GLsizei, GLsizei));
+    g_viewport = {x, y, w, h, true};
+    apply_rect(fn, g_viewport);
+}
+void h_glGetIntegerv(u32 p, u32 out) {
+    GL(glGetIntegerv, void(GLenum, GLint*));
+    auto* v = static_cast<GLint*>(W(out));
+    fn(p, v);
+    // Viewport and scissor read back as the game set them.
+    const Rect& r = p == GL_VIEWPORT ? g_viewport : g_scissor;
+    if ((p == GL_VIEWPORT || p == GL_SCISSOR_BOX) && r.set && gles::screen_scale() != 1)
+        v[0] = r.x, v[1] = r.y, v[2] = r.w, v[3] = r.h;
+}
 void h_glReadPixels(int x, int y, int w, int h, u32 f, u32 t, u32 p) {
     GL(glReadPixels, void(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*));
-    fn(x, y, w, h, f, t, W(p));
+    const float k = g_on_screen ? gles::screen_scale() : 1;
+    if (k == 1 || f != GL_RGBA || t != GL_UNSIGNED_BYTE || w <= 0 || h <= 0) return fn(x, y, w, h, f, t, W(p));
+    // On the scaled screen: the matching surface area, resampled to w x h.
+    const int x0 = int(std::lround(x * k)), y0 = int(std::lround(y * k));
+    const int sw = std::max(1, int(std::lround((x + w) * k)) - x0), sh = std::max(1, int(std::lround((y + h) * k)) - y0);
+    std::vector<uint32_t> src(size_t(sw) * sh);
+    GLint pack = 4;
+    static const auto get = load<void(GLenum, GLint*)>("glGetIntegerv");
+    static const auto store = load<void(GLenum, GLint)>("glPixelStorei");
+    get(GL_PACK_ALIGNMENT, &pack);
+    store(GL_PACK_ALIGNMENT, 4);
+    fn(x0, y0, sw, sh, f, t, src.data());
+    store(GL_PACK_ALIGNMENT, pack);
+    auto* out = static_cast<uint8_t*>(W(p));
+    for (int row = 0; row < h; ++row) {
+        const int sy = std::min(sh - 1, int((row + 0.5f) * sh / h));
+        for (int col = 0; col < w; ++col) {
+            const int sx = std::min(sw - 1, int((col + 0.5f) * sw / w));
+            std::memcpy(out + (size_t(row) * w + col) * 4, &src[size_t(sy) * sw + sx], 4);
+        }
+    }
 }
 
 // glGetString returns host memory: hand out guest copies (stable per name).
@@ -247,11 +310,25 @@ void h_glCompressedTexImage2D(u32 t, int level, u32 ifmt, int w, int h, int bord
 
 void h_glCopyTexImage2D(u32 t, int level, u32 ifmt, int x, int y, int w, int h, int border) {
     GL(glCopyTexImage2D, void(GLenum, GLint, GLenum, GLint, GLint, GLsizei, GLsizei, GLint));
-    fn(t, level, ifmt, x, y, w, h, border);
+    const float k = g_on_screen ? gles::screen_scale() : 1;
+    if (k == 1) return fn(t, level, ifmt, x, y, w, h, border);
+    // On the scaled screen: the matching surface area, a texture larger or smaller
+    // by the scale; coordinates relative to its size stay the same.
+    const int x0 = int(std::lround(x * k)), y0 = int(std::lround(y * k));
+    fn(t, level, ifmt, x0, y0, int(std::lround((x + w) * k)) - x0, int(std::lround((y + h) * k)) - y0, border);
 }
 
 // ---- framebuffers
-void h_glBindFramebuffer(u32 t, u32 f) { GL(glBindFramebuffer, void(GLenum, GLuint)); fn(t, f); }
+void h_glBindFramebuffer(u32 t, u32 f) {
+    GL(glBindFramebuffer, void(GLenum, GLuint));
+    fn(t, f);
+    if (gles::screen_scale() == 1 || (f == 0) == g_on_screen) return;
+    g_on_screen = f == 0;
+    static const auto viewport = load<void(GLint, GLint, GLsizei, GLsizei)>("glViewport");
+    static const auto scissor = load<void(GLint, GLint, GLsizei, GLsizei)>("glScissor");
+    apply_rect(viewport, g_viewport);
+    apply_rect(scissor, g_scissor);
+}
 void h_glBindRenderbuffer(u32 t, u32 r) { GL(glBindRenderbuffer, void(GLenum, GLuint)); fn(t, r); }
 void h_glGenFramebuffers(int n, u32 ids) { GL(glGenFramebuffers, void(GLsizei, GLuint*)); fn(n, static_cast<GLuint*>(W(ids))); }
 void h_glGenRenderbuffers(int n, u32 ids) { GL(glGenRenderbuffers, void(GLsizei, GLuint*)); fn(n, static_cast<GLuint*>(W(ids))); }

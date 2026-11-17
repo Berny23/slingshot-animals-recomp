@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <thread>
 
+#include "devkitpro.hpp"
 #include "downloads.hpp"
 #include "install.hpp"
 #include "paths.hpp"
@@ -66,6 +67,18 @@ double step_cost(const QString& desc, bool& serial) {
     serial = false;
     if (desc.contains("/generated/funcs_")) return 14;  // recompiled code: ~0.5 GB and ~15 s each
     return 1.5;
+}
+
+// Windows: the 8.3 form of a path, which has no spaces (devkitPro's linker
+// settings cannot hold them).
+QString short_path(const QString& path) {
+#ifdef Q_OS_WIN
+    wchar_t buf[MAX_PATH];
+    const std::wstring native = QDir::toNativeSeparators(path).toStdWString();
+    const DWORD n = GetShortPathNameW(native.c_str(), buf, MAX_PATH);
+    if (n > 0 && n < MAX_PATH) return QDir::fromNativeSeparators(QString::fromWCharArray(buf, int(n)));
+#endif
+    return path;
 }
 
 QString find_program(const QString& name, const QStringList& extra = {}) {
@@ -208,6 +221,10 @@ bool Job::prepare_tools(QString& error) {
             return false;
         }
     }
+    if (req_.nintendo_switch && !devkitpro_available()) {
+        error = "Nintendo Switch builds are not available on this computer (devkitPro has no tools for it).";
+        return false;
+    }
 
     // A C++ compiler: llvm-mingw (Windows, downloaded), the Command Line Tools
     // (macOS) or the system's (Linux).
@@ -230,7 +247,7 @@ bool Job::prepare_tools(QString& error) {
         error = "A C++ compiler is needed (GCC or Clang); please install it, e.g. the package g++ or gcc-c++.";
         return false;
     }
-    if (!req_.android) {
+    if (!req_.android && !req_.nintendo_switch) {
         // The game's libraries: the system's development packages, else built
         // from the pinned sources with the prebuilt SDL3 this app carries.
         bool system_libs = false;
@@ -283,6 +300,18 @@ bool Job::prepare_tools(QString& error) {
                                                 ? "/CMake.app/Contents/bin/cmake"
                                                 : "/bin/cmake" + kExe)
                       : system_cmake;
+    if (req_.nintendo_switch) {
+        // devkitPro: the newest packages on every build (unpacked by CMake, which reads .zst).
+        FetchContext ctx;
+        ctx.cancel = &cancel_;
+        ctx.log = [this](const QString& s) { log(s); };
+        ctx.progress = [&](qint64 done, qint64 all) {
+            report("Downloading devkitPro (" + format_size(done) + " of " + format_size(all) + ")");
+        };
+        report("Checking devkitPro");
+        devkitpro_ = fetch_devkitpro(cmake_, ctx, error);
+        if (devkitpro_.isEmpty()) return false;
+    }
     ninja_ = ninja_dl ? dir_of(ninja_dl) + "/ninja" + kExe : system_ninja;
     if (ninja_dl)  // zips made elsewhere carry no Unix permissions
         QFile::setPermissions(ninja_, QFile::permissions(ninja_) | QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther);
@@ -377,7 +406,7 @@ Job::BuildEstimate Job::estimate_build(const QString& build_dir) const {
     e.funcs_missing = 0;
     for (int i = 0; i < 128; ++i)
         if (!QFileInfo::exists(objects + QString("funcs_%1.cpp.o").arg(i, 3, 10, QChar('0')))) ++e.funcs_missing;
-    e.serial = (e.recompile ? 120 : 0) + 15 + (req_.android ? 40 : 0);
+    e.serial = (e.recompile ? 120 : 0) + 15 + (req_.android || req_.nintendo_switch ? 40 : 0);
     e.parallel = e.funcs_missing * 14.0;
     e.light_guess = QFileInfo::exists(build_dir + "/build.ninja") ? 20 : 500;  // a new directory builds the libraries too
     return e;
@@ -428,7 +457,7 @@ bool Job::build(const QString& build_dir, const QStringList& targets, QString& e
 }
 
 bool Job::build_host_tools(QString& error) {
-    // abrecomp and slingshot-apk for this computer (Android cross builds).
+    // abrecomp and slingshot-apk for this computer (Android and Switch cross builds).
     const QString dir = cache_dir() + "/build/host" + QString(compiler_args_.isEmpty() ? "" : "-zig");
     QStringList args = {"-DSLINGSHOT_TOOLS_ONLY=ON", "-DSLINGSHOT_SYSTEM_DEPS=OFF"};
     args << compiler_args_;
@@ -451,6 +480,18 @@ bool Job::build_host_tools(QString& error) {
 bool Job::finish(QString& message, QString& path, QString& error) {
     report(req_.android ? "Finishing the Android package" : (req_.install ? "Installing" : "Saving"));
     const QString id = req_.game.id;
+    if (req_.nintendo_switch) {
+        const QString nro = build_dir_ + "/bin/slingshot-" + id + ".nro";
+        QFile::remove(req_.output);
+        if (!QFile::copy(nro, req_.output)) {
+            error = "Cannot write " + QDir::toNativeSeparators(req_.output);
+            return false;
+        }
+        path = req_.output;
+        message = "The Nintendo Switch homebrew was saved:\n" + QDir::toNativeSeparators(path) +
+                  "\n\nCopy it into the folder switch on the SD card and start it from the Homebrew Menu.";
+        return true;
+    }
     if (req_.android) {
         const QString apk = build_dir_ + "/bin/slingshot-" + id + ".apk";
         if (req_.install) {
@@ -510,12 +551,15 @@ void Job::run() {
     jobs_ = job_count();
     log(QString("%1: %2 (%3), %4, %5 parallel jobs")
             .arg(QDateTime::currentDateTime().toString(Qt::ISODate), req_.game.title, req_.game.version,
-                 req_.android ? "Android" : "this computer")
+                 req_.android ? "Android" : req_.nintendo_switch ? "Nintendo Switch" : "this computer")
             .arg(jobs_));
 
     const bool first = !QFileInfo::exists(cache_dir() + "/build");
-    phases_ = {{"Tools", 1}, {"Build tools", req_.android ? 60.0 : 0.0}, {"Configure", first ? 150.0 : 25.0},
+    const bool cross = req_.android || req_.nintendo_switch;
+    phases_ = {{"Tools", 1}, {"Build tools", cross ? 60.0 : 0.0}, {"Configure", first ? 150.0 : 25.0},
                {"Build", 900}, {"Finish", req_.android ? 15.0 : 5.0}};
+    // devkitPro: about 120 MB the first time.
+    if (req_.nintendo_switch && !QFileInfo::exists(cache_dir() + "/tools/devkitpro")) phases_[kTools].estimate += 24;
     // Downloads: their size at ~5 MB/s, unpacking included.
     for (Tool t : {Tool::CMake, Tool::Ninja, Tool::LlvmMingw, Tool::Ndk, Tool::BuildTools, Tool::Platform,
                    Tool::PlatformTools, Tool::Jdk}) {
@@ -530,7 +574,7 @@ void Job::run() {
     QString error, message, path;
     source_ = sync_sources(error);
     bool ok = !source_.isEmpty() && prepare_tools(error);
-    if (ok && req_.android) {
+    if (ok && cross) {
         set_phase(kHostTools, 0);
         report("Preparing the build tools");
         ok = build_host_tools(error);
@@ -550,6 +594,11 @@ void Job::run() {
                  << "-DSLINGSHOT_HOST_TOOLS=" + host_tools_ << "-DSLINGSHOT_ANDROID_SDK=" + sdk_
                  << "-DSLINGSHOT_JDK=" + jdk_ << "-DSLINGSHOT_ANDROID_KEYSTORE=" + data_dir() + "/android.keystore";
             targets << "slingshot-" + req_.game.id + "-apk";
+        } else if (req_.nintendo_switch) {
+            target_dir = "switch";
+            args << "-DCMAKE_TOOLCHAIN_FILE=" + source_ + "/cmake/toolchains/switch.cmake"
+                 << "-DDEVKITPRO=" + short_path(devkitpro_) << "-DSLINGSHOT_HOST_TOOLS=" + host_tools_;
+            targets << "slingshot-" + req_.game.id + "-nro";
         } else {
 #if defined(Q_OS_WIN)
             target_dir = "windows";

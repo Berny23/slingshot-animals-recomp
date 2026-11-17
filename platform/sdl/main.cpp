@@ -18,7 +18,13 @@
 #ifdef __ANDROID__
 #include <jni.h>
 #endif
+#ifdef __SWITCH__
+#include <pthread.h>
 
+#include "switch_host.hpp"
+#endif
+
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -175,9 +181,12 @@ bool android_display(recomp::java::Display& d) {
 #endif
 
 // game/ next to the executable (in an installed game), else the build's directory.
+// On the Switch the NRO's romfs holds them.
 std::string default_game_dir() {
 #ifdef __ANDROID__
     return android_game_dir();
+#elif defined(__SWITCH__)
+    return "romfs:";
 #endif
     const std::string lib = std::string("/lib/lib") + recomp::game.library + ".so";
     if (const char* base = SDL_GetBasePath()) {
@@ -316,9 +325,7 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
     return true;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
+int run(int argc, char** argv) {
     Options opt;
     int status = 0;
     if (!parse_args(argc, argv, opt, status)) return status;
@@ -359,7 +366,7 @@ int main(int argc, char** argv) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, desktop ? 1 : 0);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__SWITCH__)
         // Immersive: the game covers the system bars, as the original's full-screen activity.
         constexpr SDL_WindowFlags mode = SDL_WINDOW_FULLSCREEN;
 #else
@@ -398,6 +405,9 @@ int main(int argc, char** argv) {
     }
     recomp::gles::set_loader(gl_loader);
     recomp::gles::set_desktop_gl(desktop_gl);
+    // Surface pixels per game pixel: a mod may have the game drawn for a smaller or
+    // larger screen and scaled to the surface.
+    float screen_scale = 1;
     {
         recomp::java::Display d;
 #ifdef __ANDROID__
@@ -407,6 +417,12 @@ int main(int argc, char** argv) {
             SDL_GetWindowSizeInPixels(window, &d.width, &d.height);
             d.dpi = 160.0f * SDL_GetWindowDisplayScale(window);
         }
+        for (auto& m : mods)
+            if (const float s = m->screen_scale(d.width, d.height, d.dpi); s > 0) screen_scale = s;
+        d.width = int(std::lround(d.width / screen_scale));
+        d.height = int(std::lround(d.height / screen_scale));
+        d.dpi /= screen_scale;
+        recomp::gles::set_screen_scale(screen_scale);
         recomp::java::set_display(d);
     }
 
@@ -438,10 +454,11 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "host: orientations 0x%x, render thread %d\n", orientations, app.render_thread);
 
     // Renderer.onSurfaceChanged -> Updater.initialize / onResize
+    const auto game_px = [&](int v) { return int(std::lround(v / screen_scale)); };
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(window, &w, &h);
-    app.init(w, h);
-    app.resize(w, h);
+    app.init(game_px(w), game_px(h));
+    app.resize(game_px(w), game_px(h));
 
     if (!opt.dump_dir.empty()) {
         jni::NativeFrame frame;
@@ -453,6 +470,7 @@ int main(int argc, char** argv) {
     }
 
     slingshot::AndroidInput input;
+    input.set_screen_scale(screen_scale);
     slingshot::SdlInput sdl_input(window, input);
     slingshot::TestScript script(window);
     slingshot::Overlay overlay;
@@ -463,7 +481,7 @@ int main(int argc, char** argv) {
         ++frame;
         if (!script.run_input(frame)) running = false;
         SDL_GetWindowSizeInPixels(window, &w, &h);
-        slingshot::ModContext ctx{input, window, w, h, SDL_GetWindowPixelDensity(window), SDL_GetTicksNS()};
+        slingshot::ModContext ctx{input, window, w, h, SDL_GetWindowPixelDensity(window), SDL_GetTicksNS(), screen_scale};
         SDL_Event e;
         // Paused (minimized): nothing is updated or drawn, so wait for events.
         if (app.state == NativeApp::State::Paused) {
@@ -476,7 +494,7 @@ int main(int argc, char** argv) {
             if (consumed) continue;
             switch (e.type) {
                 case SDL_EVENT_QUIT: running = false; break;
-                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: app.resize(e.window.data1, e.window.data2); break;
+                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: app.resize(game_px(e.window.data1), game_px(e.window.data2)); break;
                 case SDL_EVENT_WINDOW_MINIMIZED:
                 case SDL_EVENT_WILL_ENTER_BACKGROUND: app.pause(); break;
                 case SDL_EVENT_WINDOW_RESTORED:
@@ -508,4 +526,33 @@ int main(int argc, char** argv) {
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+#ifdef __SWITCH__
+    // Recompiled code needs a large stack: the game runs on a thread with 8 MiB.
+    slingshot::nx::init();
+    struct Args {
+        int argc;
+        char** argv;
+        int status;
+    } args{argc, argv, 1};
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 8u << 20);
+    pthread_t thread;
+    if (pthread_create(&thread, &attr, [](void* p) -> void* {
+            auto* a = static_cast<Args*>(p);
+            a->status = run(a->argc, a->argv);
+            return nullptr;
+        }, &args) == 0)
+        pthread_join(thread, nullptr);
+    pthread_attr_destroy(&attr);
+    slingshot::nx::exit();
+    return args.status;
+#else
+    return run(argc, argv);
+#endif
 }

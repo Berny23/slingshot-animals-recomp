@@ -47,6 +47,8 @@ int fallback(int keycode) {
 // MOVE/CANCEL for every pointer of the MotionEvent.
 
 void AndroidInput::touch_event(int action, float x, float y, int id) {
+    x /= screen_scale_;
+    y /= screen_scale_;
     queue_.push_back({Event::Touch, action, int(bits(x)), int(bits(y)), id});
 }
 

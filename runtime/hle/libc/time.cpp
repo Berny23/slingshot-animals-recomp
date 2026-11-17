@@ -19,6 +19,9 @@ long gmt_offset(const std::tm& t) {
     const time_t local = _mkgmtime(&copy);  // the fields read as UTC
     copy = t;
     return long(local - std::mktime(&copy));
+#elif defined(__SWITCH__)
+    (void)t;
+    return -_timezone;  // newlib: from TZ, which the host sets to the console's offset
 #else
     return t.tm_gmtoff;
 #endif

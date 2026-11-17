@@ -10,6 +10,10 @@ add_library(slingshot_host OBJECT
     test_script.cpp
     watchdog.cpp)
 target_include_directories(slingshot_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+if(NINTENDO_SWITCH)
+    target_sources(slingshot_host PRIVATE "${CMAKE_SOURCE_DIR}/platform/switch/switch_host.cpp")
+    target_include_directories(slingshot_host PUBLIC "${CMAKE_SOURCE_DIR}/platform/switch")
+endif()
 target_link_libraries(slingshot_host PUBLIC recomp_runtime slingshot::SDL3)
 # System fonts: fontconfig on Linux, the font folders elsewhere.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

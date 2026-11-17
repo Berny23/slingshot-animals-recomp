@@ -30,6 +30,7 @@ struct ModContext {
     int width, height;    // surface size in pixels
     float pixel_density;  // surface pixels per window coordinate (SDL event positions)
     uint64_t now_ns;      // SDL_GetTicksNS() of the current frame
+    float screen_scale;   // surface pixels per game pixel (screen_scale of a mod, else 1)
 };
 
 class Mod {
@@ -41,6 +42,10 @@ public:
     virtual void on_frame(ModContext& ctx) {}
     // Called after the game rendered the frame: shapes to draw over it.
     virtual void on_overlay(Overlay& overlay, ModContext& ctx) {}
+    // Called once at start with the display (pixels, dots per inch): surface pixels
+    // per game pixel, or 0 to leave the size alone. The game then sees a screen of
+    // the display's size divided by it and is drawn scaled to the surface.
+    virtual float screen_scale(int width, int height, float dpi) { return 0; }
 };
 
 struct ModInfo {

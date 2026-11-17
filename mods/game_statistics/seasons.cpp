@@ -341,10 +341,19 @@ local function unique(name)
     serial = serial + 1
     return name .. serial
 end
+-- Sizes are for a height of 720 (statistics.set_factor). Measured there: 'MMMMMMMMMM'
+-- in FONT_BASIC is 304 wide, CLOUD_DIALOG_BUTTON_CLOSE 99.
+local text_k, sprite_k = 1, 1
+local function measure_sets()
+    local t = ui.Text:new({name = unique('measure'), font = 'FONT_BASIC', text = 'MMMMMMMMMM'})
+    local ok, w = pcall(res.getSpriteBounds, 'CLOUD_DIALOG_BUTTON_CLOSE')
+    text_k = statistics.set_factor((t:getWidth() or 0) * (t.scaleX or 1), 304)
+    sprite_k = statistics.set_factor(ok and w, 99)
+end
 local function label(parent, s, x, y, anchor, scale, font, max_width)
     local t = ui.Text:new({name = unique('label'), font = font or 'FONT_BASIC', text = tostring(s),
                            hanchor = anchor or 'LEFT', vanchor = 'TOP'})
-    scale = scale or 1
+    scale = (scale or 1) * text_k * screenHeight / 720
     local w = (t:getWidth() or 0) * scale
     if max_width and w > max_width then scale = scale * max_width / w end
     t:setScale(scale)
@@ -364,7 +373,7 @@ end
 local function image(parent, sprite, x, y, scale)
     local i = ui.Image:new({name = unique('image')})
     i:setImage(sprite)
-    i:setScale(scale or 1)
+    i:setScale((scale or 1) * sprite_k)
     i.x, i.y = x, y
     parent:addChild(i)
     return i
@@ -372,7 +381,7 @@ end
 local function button(parent, name, sprite, x, y, scale)
     local b = ui.ImageButton:new({name = name})
     b:setImage(sprite)
-    b:setScale(scale or 1)
+    b:setScale((scale or 1) * sprite_k)
     b.x, b.y = x, y
     b.returnValue = name
     parent:addChild(b)
@@ -383,6 +392,7 @@ GameStatisticsPage = ui.Frame:inherit()
 
 function GameStatisticsPage:init()
     ui.Frame.init(self, {name = 'gameStatisticsPage'})
+    measure_sets()
     local W, H = screenWidth, screenHeight
     local s = H / 720
     self.x, self.y, self.w, self.h = 0, 0, W, H
@@ -562,7 +572,7 @@ function MainMenu:update(...)
     local results = {update(self, ...)}
     local b, options = self:getChild('statisticsButton'), self:getChild('optionsButton')
     if b and options then
-        b.scaleX, b.scaleY = options.scaleX, options.scaleY
+        statistics.match_button(b, options)
         b.x, b.y = options.x, screenHeight - options.y
     end
     return unpack(results)

@@ -12,6 +12,15 @@
 //   statistics.progress(parts)             -> mean of done / total over
 //                                             parts = {{label, done, total}, ...};
 //                                             a part with total 0 counts as done
+//   statistics.set_factor(measured, ref)   -> ref / measured: the pages are laid out at a
+//                                             height of 720 with the sets (fonts, sprites)
+//                                             a text or sprite of width ref was measured
+//                                             in; devices that load larger sets get a
+//                                             factor below 1 (1 when nothing is measured)
+//   statistics.match_button(b, other)      -> sizes button b like the menu button other:
+//                                             its scales times other.w / b.w (the trophy
+//                                             sprites are smaller); minScale and maxScale
+//                                             too, which a button returns to after a press
 #pragma once
 
 namespace slingshot::mods {
@@ -54,6 +63,15 @@ function statistics.progress(parts)
     local sum = 0
     for _, p in ipairs(parts) do sum = sum + (p[3] > 0 and math.min(p[2] / p[3], 1) or 1) end
     return sum / #parts
+end
+function statistics.set_factor(measured, ref)
+    return (measured and measured > 0) and ref / measured or 1
+end
+function statistics.match_button(b, other)
+    local k = (other.w and b.w and b.w > 0) and other.w / b.w or 1
+    b.scaleX, b.scaleY = (other.scaleX or 1) * k, (other.scaleY or 1) * k
+    if other.minScale then b.minScale = other.minScale * k end
+    if other.maxScale then b.maxScale = other.maxScale * k end
 end
 )";
 

@@ -144,71 +144,74 @@ QString cached(const Download& d) {
     return {};
 }
 
+bool download_checked(const QString& url, const QString& sha256, qint64 size, const QString& name,
+                      const QString& path, const FetchContext& ctx, QString& error) {
+    if (ctx.log) ctx.log("Downloading " + url);
+    // Download with the hash computed on the way.
+    QFile out(path + ".part");
+    if (!out.open(QIODevice::WriteOnly)) {
+        error = "Cannot write " + out.fileName();
+        return false;
+    }
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    QNetworkAccessManager net;
+    QNetworkRequest request{QUrl(url)};
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setHeader(QNetworkRequest::UserAgentHeader, "slingshot-builder");
+    QNetworkReply* reply = net.get(request);
+    QEventLoop loop;
+    qint64 done = 0;
+    bool write_failed = false;
+    QObject::connect(reply, &QNetworkReply::readyRead, &loop, [&] {
+        const QByteArray chunk = reply->readAll();
+        hash.addData(chunk);
+        done += chunk.size();
+        if (out.write(chunk) != chunk.size()) {
+            write_failed = true;
+            reply->abort();
+        }
+        if (ctx.progress) {
+            const qint64 total = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
+            ctx.progress(done, total > 0 ? total : size);
+        }
+        if (ctx.cancel && *ctx.cancel) reply->abort();
+    });
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+    const QByteArray rest = reply->readAll();
+    hash.addData(rest);
+    out.write(rest);
+    out.close();
+    const bool failed = reply->error() != QNetworkReply::NoError;
+    const QString net_error = reply->errorString();
+    reply->deleteLater();
+    if (ctx.cancel && *ctx.cancel) {
+        QFile::remove(out.fileName());
+        error = "Cancelled";
+        return false;
+    }
+    if (write_failed || failed) {
+        QFile::remove(out.fileName());
+        error = write_failed ? "Cannot write " + out.fileName() + " (disk full?)"
+                             : "Download of " + name + " failed: " + net_error;
+        return false;
+    }
+    if (!sha256.isEmpty() && QString::fromLatin1(hash.result().toHex()) != sha256) {
+        QFile::remove(out.fileName());
+        error = "The download of " + name + " is not the expected file (SHA-256 differs). Try again later.";
+        return false;
+    }
+    QFile::remove(path);
+    QFile::rename(out.fileName(), path);
+    return true;
+}
+
 QString fetch(const Download& d, const FetchContext& ctx, QString& error) {
     if (QString dir = cached(d); !dir.isEmpty()) return dir;
     const QString dl_dir = cache_dir() + "/downloads";
     QDir().mkpath(dl_dir);
     const QString archive = dl_dir + "/" + QUrl(d.url).fileName();
-    if (ctx.log) ctx.log("Downloading " + d.url);
-
-    // Download with the hash computed on the way.
-    {
-        QFile out(archive + ".part");
-        if (!out.open(QIODevice::WriteOnly)) {
-            error = "Cannot write " + out.fileName();
-            return {};
-        }
-        QCryptographicHash hash(QCryptographicHash::Sha256);
-        QNetworkAccessManager net;
-        QNetworkRequest request{QUrl(d.url)};
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-        request.setHeader(QNetworkRequest::UserAgentHeader, "slingshot-builder");
-        QNetworkReply* reply = net.get(request);
-        QEventLoop loop;
-        qint64 done = 0;
-        bool write_failed = false;
-        QObject::connect(reply, &QNetworkReply::readyRead, &loop, [&] {
-            const QByteArray chunk = reply->readAll();
-            hash.addData(chunk);
-            done += chunk.size();
-            if (out.write(chunk) != chunk.size()) {
-                write_failed = true;
-                reply->abort();
-            }
-            if (ctx.progress) {
-                const qint64 total = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
-                ctx.progress(done, total > 0 ? total : d.size);
-            }
-            if (ctx.cancel && *ctx.cancel) reply->abort();
-        });
-        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-        loop.exec();
-        const QByteArray rest = reply->readAll();
-        hash.addData(rest);
-        out.write(rest);
-        out.close();
-        const bool failed = reply->error() != QNetworkReply::NoError;
-        const QString net_error = reply->errorString();
-        reply->deleteLater();
-        if (ctx.cancel && *ctx.cancel) {
-            QFile::remove(out.fileName());
-            error = "Cancelled";
-            return {};
-        }
-        if (write_failed || failed) {
-            QFile::remove(out.fileName());
-            error = write_failed ? "Cannot write " + out.fileName() + " (disk full?)"
-                                 : "Download of " + d.name + " failed: " + net_error;
-            return {};
-        }
-        if (QString::fromLatin1(hash.result().toHex()) != d.sha256) {
-            QFile::remove(out.fileName());
-            error = "The download of " + d.name + " is not the expected file (SHA-256 differs). Try again later.";
-            return {};
-        }
-        QFile::remove(archive);
-        QFile::rename(out.fileName(), archive);
-    }
+    if (!download_checked(d.url, d.sha256, d.size, d.name, archive, ctx, error)) return {};
 
     // Unpack into a temporary folder, then move its top folder into place.
     if (ctx.log) ctx.log("Unpacking " + d.name);

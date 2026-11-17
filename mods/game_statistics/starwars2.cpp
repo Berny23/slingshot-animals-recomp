@@ -180,11 +180,20 @@ local function unique(name)
     serial = serial + 1
     return name .. serial
 end
+-- Sizes are for a height of 720 (statistics.set_factor). Measured there: 'MMMMMMMMMM'
+-- in the basic font is 247.5 wide (with the font's scale), BTN_X 97.
+local text_k, sprite_k = 1, 1
+local function measure_sets()
+    local t = ui.Text:new({name = unique('measure'), group = '', text = 'MMMMMMMMMM', font = g.getFontBasic})
+    local ok, w = pcall(g.res.getSpriteBounds, 'BTN_X')
+    text_k = statistics.set_factor((t:getWidth() or 0) * (t.scaleX or 1), 247.5)
+    sprite_k = statistics.set_factor(ok and w, 97)
+end
 local function label(parent, s, x, y, anchor, font, max_width, scale)
     local t = ui.Text:new({name = unique('label'), group = '', text = tostring(s), font = font or g.getFontBasic,
                            hanchor = anchor or 'LEFT', vanchor = 'TOP'})
     -- setScale includes the font's scale; getWidth is unscaled.
-    scale = (scale or 1) * TEXT_SCALE
+    scale = (scale or 1) * TEXT_SCALE * text_k * g.screenHeight / 720
     t:setScale(scale)
     local w = t:getWidth() * t.scaleX
     if max_width and w > max_width then t:setScale(scale * max_width / w) end
@@ -226,7 +235,9 @@ local function button(parent, value, sprite, x, y, scale)
     b.name = unique('button')
     b:setImage(sprite)
     b.x, b.y = x, y
-    b.scaleX, b.scaleY = scale or 1, scale or 1
+    scale = (scale or 1) * sprite_k
+    -- A button returns to minScale after a press.
+    b.scaleX, b.scaleY, b.minScale, b.maxScale = scale, scale, scale, scale * 1.1
     b.returnValue = value
     parent:addChild(b)
     b:onEntry()
@@ -237,6 +248,7 @@ GameStatisticsPage = g.ui.Frame:inherit()
 
 function GameStatisticsPage:init()
     self.name = 'gameStatisticsPage'
+    measure_sets()
     self.requireInput = true
     local W, H = g.screenWidth, g.screenHeight
     local s = H / 720
@@ -322,7 +334,7 @@ local function add_button(menu)
         -- (onEntry sets the button's drag threshold.)
         b:onEntry()
     end
-    b.scaleX, b.scaleY = options.scaleX, options.scaleY
+    statistics.match_button(b, options)
     b.x, b.y = options.x, g.screenHeight - options.y
 end
 local layout = MainMenu.layout

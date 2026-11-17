@@ -3,6 +3,8 @@
 add_library(slingshot_apk STATIC
     src/android_res.cpp
     src/extract.cpp
+    src/image.cpp
+    src/nx_elf.cpp
     src/pack.cpp
     src/sha256.cpp
     src/zip.cpp)

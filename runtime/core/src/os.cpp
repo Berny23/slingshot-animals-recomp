@@ -7,6 +7,12 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__SWITCH__)
+#include <switch.h>
+
+#include <cstring>
+#include <mutex>
+#include <vector>
 #else
 #include <csignal>
 #include <sys/mman.h>
@@ -73,6 +79,160 @@ void print_backtrace() {
     const USHORT n = CaptureStackBackTrace(0, 64, frames, nullptr);
     for (USHORT i = 0; i < n; ++i) std::fprintf(stderr, "  %p\n", frames[i]);
 }
+
+#elif defined(__SWITCH__)
+
+// Horizon maps memory only on request. Usually the heap holds all of the process's
+// memory (the homebrew loader sets it up so): then 2 MiB chunks of the heap are
+// mapped into a reservation in the ASLR region as code memory (read/write) and
+// stay mapped until exit. Where enough memory is left outside the heap and the
+// process may use svcMapPhysicalMemory, the arena lies in the alias region and
+// pages are backed as they are committed (and given back on discard).
+namespace {
+constexpr size_t kPage = 0x1000;
+constexpr size_t kChunk = 0x200000;
+constexpr uint64_t kPhysicalMinimum = 256ull << 20;  // free memory outside the heap for svcMapPhysicalMemory
+uint8_t* g_arena = nullptr;
+size_t g_arena_size = 0;
+bool g_physical = false;
+std::mutex g_map_lock;
+std::vector<bool> g_mapped;  // per page (physical) or per chunk (code memory)
+
+bool map_physical_pages(size_t first, size_t count) {
+    // Runs of unmapped pages, one call each.
+    for (size_t i = first; i < first + count;) {
+        if (g_mapped[i]) {
+            ++i;
+            continue;
+        }
+        size_t j = i;
+        while (j < first + count && !g_mapped[j]) ++j;
+        if (R_FAILED(svcMapPhysicalMemory(g_arena + i * kPage, (j - i) * kPage))) return false;
+        std::memset(g_arena + i * kPage, 0, (j - i) * kPage);
+        for (size_t k = i; k < j; ++k) g_mapped[k] = true;
+        i = j;
+    }
+    return true;
+}
+
+bool map_code_chunk(size_t chunk) {
+    void* src = aligned_alloc(kPage, kChunk);
+    if (!src) return false;
+    std::memset(src, 0, kChunk);
+    Handle h = INVALID_HANDLE;
+    if (R_FAILED(svcCreateCodeMemory(&h, src, kChunk)) ||
+        R_FAILED(svcControlCodeMemory(h, CodeMapOperation_MapOwner, g_arena + chunk * kChunk, kChunk, Perm_Rw))) {
+        if (h != INVALID_HANDLE) svcCloseHandle(h);
+        std::free(src);
+        return false;
+    }
+    g_mapped[chunk] = true;  // the handle and the source stay until exit
+    return true;
+}
+}  // namespace
+
+uint8_t* reserve_arena(size_t size, size_t, size_t) {
+    size = (size + kChunk - 1) & ~(kChunk - 1);
+    u64 alias = 0, alias_size = 0;
+    svcGetInfo(&alias, InfoType_AliasRegionAddress, CUR_PROCESS_HANDLE, 0);
+    svcGetInfo(&alias_size, InfoType_AliasRegionSize, CUR_PROCESS_HANDLE, 0);
+    u64 total = 0, used = 0;
+    svcGetInfo(&total, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+    svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
+    const uint64_t free_memory = total > used ? total - used : 0;
+    const uint64_t base = (alias + kChunk - 1) & ~uint64_t(kChunk - 1);
+    Result probe = MAKERESULT(Module_Libnx, LibnxError_OutOfMemory);
+    if (alias_size >= size + (base - alias) && free_memory >= kPhysicalMinimum) {
+        probe = svcMapPhysicalMemory(reinterpret_cast<void*>(base), kPage);
+        if (R_SUCCEEDED(probe)) svcUnmapPhysicalMemory(reinterpret_cast<void*>(base), kPage);
+    }
+    std::fprintf(stderr, "recomp: memory %llu MiB, used %llu MiB, svcMapPhysicalMemory 0x%x\n",
+                 static_cast<unsigned long long>(total >> 20), static_cast<unsigned long long>(used >> 20), probe);
+    if (R_SUCCEEDED(probe)) {
+        g_arena = reinterpret_cast<uint8_t*>(base);
+        g_physical = true;
+        g_mapped.assign(size / kPage, false);
+    } else if (envIsSyscallHinted(0x4b) && envIsSyscallHinted(0x4c)) {  // svcCreateCodeMemory, svcControlCodeMemory
+        virtmemLock();
+        g_arena = static_cast<uint8_t*>(virtmemFindAslr(size, kChunk));
+        if (g_arena) virtmemAddReservation(g_arena, size);
+        virtmemUnlock();
+        g_mapped.assign(size / kChunk, false);
+    }
+    g_arena_size = size;
+    if (!g_arena) std::fprintf(stderr, "recomp: cannot reserve the guest address space\n");
+    else std::fprintf(stderr, "recomp: guest memory by %s\n", g_physical ? "svcMapPhysicalMemory" : "code memory");
+    return g_arena;
+}
+
+bool commit(void* p, size_t size) {
+    std::lock_guard lk(g_map_lock);
+    const size_t begin = size_t(static_cast<uint8_t*>(p) - g_arena), end = begin + size;
+    bool ok = true;
+    if (g_physical) {
+        ok = map_physical_pages(begin / kPage, (end + kPage - 1) / kPage - begin / kPage);
+    } else {
+        for (size_t c = begin / kChunk; ok && c < (end + kChunk - 1) / kChunk; ++c)
+            if (!g_mapped[c]) ok = map_code_chunk(c);
+    }
+    if (!ok) std::fprintf(stderr, "recomp: out of memory (committing %zu bytes)\n", size);
+    return ok;
+}
+
+void discard(void* p, size_t size) {
+    std::lock_guard lk(g_map_lock);
+    const size_t begin = size_t(static_cast<uint8_t*>(p) - g_arena), end = begin + size;
+    if (!g_physical) {
+        std::memset(p, 0, size);  // read as zeros, as after a new commit
+        return;
+    }
+    // Whole pages only; a partly covered page may still hold live guest data.
+    const size_t first = (begin + kPage - 1) / kPage, last = end / kPage;
+    for (size_t i = first; i < last;) {
+        if (!g_mapped[i]) {
+            ++i;
+            continue;
+        }
+        size_t j = i;
+        while (j < last && g_mapped[j]) ++j;
+        svcUnmapPhysicalMemory(g_arena + i * kPage, (j - i) * kPage);
+        for (size_t k = i; k < j; ++k) g_mapped[k] = false;
+        i = j;
+    }
+}
+
+namespace {
+const char* exception_name(ThreadExceptionDesc d) {
+    switch (d) {
+        case ThreadExceptionDesc_InstructionAbort: return "instruction abort";
+        case ThreadExceptionDesc_MisalignedPC: return "misaligned pc";
+        case ThreadExceptionDesc_MisalignedSP: return "misaligned sp";
+        case ThreadExceptionDesc_SError: return "serror";
+        case ThreadExceptionDesc_BadSVC: return "bad svc";
+        case ThreadExceptionDesc_Trap: return "illegal instruction";
+        default: return "segmentation fault";
+    }
+}
+}  // namespace
+
+void install_fault_handler(void (*report)(const char*, uintptr_t)) { g_report = report; }
+void install_thread_report(void (*)()) {}
+void print_backtrace() {}
+
+}  // namespace recomp::os
+
+// libnx calls this on a fatal CPU exception (with its own stack below).
+extern "C" {
+alignas(16) uint8_t __nx_exception_stack[0x8000];
+uint64_t __nx_exception_stack_size = sizeof(__nx_exception_stack);
+void __libnx_exception_handler(ThreadExceptionDump* ctx) {
+    std::fprintf(stderr, "recomp: crash at pc 0x%llx\n", static_cast<unsigned long long>(ctx->pc.x));
+    if (recomp::os::g_report) recomp::os::g_report(recomp::os::exception_name(ThreadExceptionDesc(ctx->error_desc)), uintptr_t(ctx->far.x));
+    std::fflush(stderr);
+}
+}
+
+namespace recomp::os {
 
 #else
 

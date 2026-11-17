@@ -573,7 +573,7 @@ local function make_page_class()
         image(self, 'GENERAL_UI_BG', cx, 351 * s, 1.64 * s, 1.142 * s)
         image(self, 'POPUP_BG_SMALL1', cx - 282 * s, 452 * s, 1.48 * s, 2.17 * s)
         image(self, 'POPUP_BG_SMALL1', cx + 282 * s, 452 * s, 1.48 * s, 2.17 * s)
-        label(self, text('title'), cx, 166 * s, 'HCENTER', 1.8 * s, 700 * s)
+        label(self, text('title'), cx, 166 * s, 'HCENTER', 2 * s, 700 * s)
         button(self, 'STATISTICS_CLOSE', 'UI_BUTTON_WOOD_SMALL', cx + 475 * s, 155 * s, s)
 
         -- left: the progress and the counters
@@ -581,22 +581,22 @@ local function make_page_class()
         local list = parts()
         local total = statistics.progress(list)
         local y = 232 * s
-        local percent = label(self, string.format('%d %%', math.floor(total * 100)), right, y, 'RIGHT', 1.3 * s)
-        label(self, text('progress'), left, y, 'LEFT', 1.3 * s, right - left - percent.scaledWidth - 12 * s)
+        local percent = label(self, string.format('%d %%', math.floor(total * 100)), right, y, 'RIGHT', 1.5 * s)
+        label(self, text('progress'), left, y, 'LEFT', 1.5 * s, right - left - percent.scaledWidth - 12 * s)
         y = y + 38 * s
         rect(self, left, y, right - left, 20 * s, 0.35, 0.2, 0.1, 0.5)
         rect(self, left + 3 * s, y + 3 * s, math.max((right - left - 6 * s) * total, 0), 14 * s, 1, 0.8, 0.1)
         y = y + 34 * s
         local row = 27 * s
         for _, p in ipairs(list) do
-            local v = label(self, number(p[2]) .. ' / ' .. number(p[3]), right, y, 'RIGHT', 1.1 * s)
-            label(self, p[1], left, y, 'LEFT', 1.1 * s, right - left - v.scaledWidth - 10 * s)
+            local v = label(self, number(p[2]) .. ' / ' .. number(p[3]), right, y, 'RIGHT', 1.3 * s)
+            label(self, p[1], left, y, 'LEFT', 1.3 * s, right - left - v.scaledWidth - 10 * s)
             y = y + row
         end
         y = y + 12 * s
         for _, c in ipairs(counters()) do
-            local v = label(self, c[2], right, y, 'RIGHT', 1.1 * s)
-            label(self, c[1], left, y, 'LEFT', 1.1 * s, right - left - v.scaledWidth - 10 * s)
+            local v = label(self, c[2], right, y, 'RIGHT', 1.3 * s)
+            label(self, c[1], left, y, 'LEFT', 1.3 * s, right - left - v.scaledWidth - 10 * s)
             y = y + row
         end
 
@@ -605,8 +605,8 @@ local function make_page_class()
         local count = 0
         for _, a in ipairs(self.list) do if unlocked(a) then count = count + 1 end end
         self.area = {x0 = cx + 55 * s, x1 = cx + 495 * s, y = 232 * s}
-        local n = label(self, number(count) .. ' / ' .. number(#self.list), self.area.x1, self.area.y, 'RIGHT', 1.3 * s)
-        label(self, text('achievements'), self.area.x0, self.area.y, 'LEFT', 1.3 * s,
+        local n = label(self, number(count) .. ' / ' .. number(#self.list), self.area.x1, self.area.y, 'RIGHT', 1.5 * s)
+        label(self, text('achievements'), self.area.x0, self.area.y, 'LEFT', 1.5 * s,
               self.area.x1 - self.area.x0 - n.scaledWidth - 12 * s)
         self.pages = math.max(1, math.ceil(#self.list / PER_PAGE))
         local by = 646 * s
@@ -614,7 +614,7 @@ local function make_page_class()
         image(self.back, 'ICON_ARROW_LEFT', 0, 0, 1)
         self.forward = button(self, 'STATISTICS_FORWARD', 'BTN_BG_SMALL', self.area.x1 - 26 * s, by, 0.55 * s)
         image(self.forward, 'ICON_ARROW_LEFT', 0, 0, -1, 1)
-        self.pageText = label(self, '', (self.area.x0 + self.area.x1) / 2, by - 11 * s, 'HCENTER', 1.1 * s)
+        self.pageText = label(self, '', (self.area.x0 + self.area.x1) / 2, by - 11 * s, 'HCENTER', 1.3 * s)
         self:showPage(1)
     end
 
@@ -644,9 +644,9 @@ local function make_page_class()
                 status = number(math.min(value, target)) .. ' / ' .. number(target)
             end
             local status_w = 0
-            if status then status_w = label(rows, status, area.x1, y + 3 * s, 'RIGHT', 0.95 * s).scaledWidth + 10 * s end
-            label(rows, name(a), text_x, y, 'LEFT', 1.15 * s, area.x1 - text_x - status_w)
-            label(rows, info or '', text_x, y + 25 * s, 'LEFT', 0.95 * s, area.x1 - text_x)
+            if status then status_w = label(rows, status, area.x1, y + 3 * s, 'RIGHT', 1.1 * s).scaledWidth + 10 * s end
+            label(rows, name(a), text_x, y, 'LEFT', 1.35 * s, area.x1 - text_x - status_w)
+            label(rows, info or '', text_x, y + 28 * s, 'LEFT', 1.1 * s, area.x1 - text_x)
             y = y + 58 * s
         end
         self.pageText:setText(page .. ' / ' .. self.pages)

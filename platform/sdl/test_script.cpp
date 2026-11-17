@@ -16,6 +16,17 @@
 #include <sstream>
 #include <thread>
 
+#ifdef __SWITCH__
+// No scripts or control pipe on the console.
+namespace slingshot {
+void save_screenshot(SDL_Window*, const std::string&) {}
+TestScript::TestScript(SDL_Window* window) : window_(window) {}
+TestScript::~TestScript() = default;
+bool TestScript::run_input(long) { return true; }
+void TestScript::run_shots(long) {}
+}  // namespace slingshot
+#else
+
 namespace slingshot {
 namespace {
 
@@ -246,3 +257,5 @@ void TestScript::pad(const std::vector<std::string>& a) {
 }
 
 }  // namespace slingshot
+
+#endif

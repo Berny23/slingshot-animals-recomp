@@ -220,6 +220,9 @@ public:
             s = status_;
             bird_still = SDL_GetTicksNS() - bird_moved_ns_ >= kBirdStillNs;
         }
+        // The script reports game pixels; touches are surface pixels.
+        for (Point* p : {&s.bird, &s.restart, &s.next}) p->x *= ctx.screen_scale, p->y *= ctx.screen_scale;
+        s.reach *= ctx.screen_scale;
         const float dt = last_ns_ ? std::min((ctx.now_ns - last_ns_) * 1e-9f, 0.1f) : 0.0f;
         last_ns_ = ctx.now_ns;
         std::array<bool, kKeyCount> pressed = pressed_;

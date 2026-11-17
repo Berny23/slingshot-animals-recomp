@@ -21,8 +21,9 @@ struct Request {
     QStringList mods;       // enabled mods
     bool all_mods = true;   // every mod (also ones added later)
     bool android = false;
+    bool nintendo_switch = false;  // a homebrew .nro, saved to `output`
     bool install = true;    // false: build only, into `output`
-    QString output;         // build only: a folder (desktop) or the .apk path (Android)
+    QString output;         // build only: a folder (desktop), the .apk path (Android) or the .nro path
 };
 
 // Parallel compile jobs for this computer: cores, limited by free memory.
@@ -79,7 +80,7 @@ private:
     int jobs_ = 1;
 
     QProcessEnvironment env_;
-    QString cmake_, ninja_, llvm_mingw_, ndk_, sdk_, jdk_;
+    QString cmake_, ninja_, llvm_mingw_, ndk_, sdk_, jdk_, devkitpro_;
     QString source_;  // <cache>/source
     QString build_dir_, host_tools_;
     // Linux: the compiler (none: the system's) and the libraries (none: the

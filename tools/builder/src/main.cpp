@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // slingshot-builder                 the window
-// slingshot-builder --build <apk> [--android] [--only <folder|file.apk>] [--mods <a,b>|none]
+// slingshot-builder --build <apk> [--android | --switch] [--only <folder|file.apk|file.nro>] [--mods <a,b>|none]
 //                                   the same build in the terminal
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QIcon>
 #include <QTextStream>
@@ -30,6 +31,7 @@ int run_cli(QCoreApplication& app) {
         const QString& a = args[i];
         if (a == "--build" && i + 1 < args.size()) r.apk = QFileInfo(args[++i]).absoluteFilePath();
         else if (a == "--android") r.android = true;
+        else if (a == "--switch") r.nintendo_switch = true;
         else if (a == "--only" && i + 1 < args.size()) {
             r.install = false;
             r.output = args[++i];
@@ -39,7 +41,8 @@ int run_cli(QCoreApplication& app) {
             const QString list = args[++i];
             if (list != "none") r.mods = list.split(',', Qt::SkipEmptyParts);
         } else {
-            err << "usage: slingshot-builder --build <apk> [--android] [--only <folder|file.apk>] [--mods <a,b>|none]\n";
+            err << "usage: slingshot-builder --build <apk> [--android | --switch] [--only <folder|file.apk|file.nro>] "
+                   "[--mods <a,b>|none]\n";
             return 2;
         }
     }
@@ -50,6 +53,10 @@ int run_cli(QCoreApplication& app) {
         return 1;
     }
     r.game = *game;
+    if (r.nintendo_switch) {
+        r.install = false;
+        if (r.output.isEmpty()) r.output = QDir::currentPath() + "/slingshot-" + r.game.id + ".nro";
+    }
     Job job(r);
     int last = -1;
     QObject::connect(&job, &Job::progress, [&](double f, const QString& status, qint64 eta) {

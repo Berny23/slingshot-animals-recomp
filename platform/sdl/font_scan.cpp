@@ -10,6 +10,10 @@
 #include <filesystem>
 #include <vector>
 
+#ifdef __SWITCH__
+#include "switch_host.hpp"
+#endif
+
 namespace slingshot {
 namespace {
 
@@ -32,6 +36,8 @@ std::vector<fs::path> font_dirs() {
     if (const char* h = std::getenv("HOME")) dirs.emplace_back(fs::path(h) / "Library" / "Fonts");
 #elif defined(__ANDROID__)
     dirs = {"/system/fonts", "/product/fonts"};
+#elif defined(__SWITCH__)
+    dirs = {nx::font_dir()};
 #else
     dirs = {"/usr/share/fonts", "/usr/local/share/fonts"};
     if (const char* h = std::getenv("HOME")) dirs.emplace_back(fs::path(h) / ".local" / "share" / "fonts");
@@ -91,6 +97,11 @@ void ScanFontProvider::scan() {
             }
         }
     }
+#ifdef __SWITCH__
+    // No family matches Android's: the first face is the default, so keep the
+    // console's priority order (the file names start with it).
+    std::sort(faces_.begin(), faces_.end(), [](const Face& a, const Face& b) { return a.path < b.path; });
+#endif
 }
 
 // Lower is better: style distance to the request.

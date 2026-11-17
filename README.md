@@ -2,7 +2,7 @@
 
 <h1 align="center">slingshot-animals-recomp</h1>
 
-Unofficial static recompilation of Rovio's old Android *Angry Birds* games. Each game's native ARM library is translated to C++ and runs natively on Linux, Windows, macOS and 64-bit Android, without an emulator.
+Unofficial static recompilation of Rovio's old Android *Angry Birds* games. Each game's native ARM library is translated to C++ and runs natively on Linux, Windows, macOS, 64-bit Android and the Nintendo Switch (homebrew), without an emulator.
 
 > [!IMPORTANT]
 > **No game files are included or linked here.** You need your own legally obtained copy of each game.
@@ -15,6 +15,8 @@ Unofficial static recompilation of Rovio's old Android *Angry Birds* games. Each
 2. Open it, drop the APK of a [supported version](#supported-versions) onto the window and press **Build & Install**.
 
 The game then appears in your system as a separate app. For Android, you can chose to build an APK file and copy it onto your phone, or install the app via ADB directly on a connected phone (recommended for advanced users).
+
+For a Nintendo Switch that runs homebrew, choose *Build for Nintendo Switch* in the menu of the build button, copy the `.nro` file into `switch/` on the SD card and start it from the Homebrew Menu.
 
 - Linux: Just run the AppImage.
 - Windows: As the builder is not signed, SmartScreen may warn you, which is normal. Just click *More info* → *Run anyway*.
@@ -41,6 +43,7 @@ All mods are on by default. In the builder, *Advanced* chooses which ones a game
 | `gamepad-pointer` | all | Play with a gamepad: the left stick moves a cursor (right stick slowly), A taps, triggers zoom, B is Back |
 | `tap-to-skip` | all | Tap to skip the wait at the end of a level |
 | `fullscreen` | all | F11 toggles fullscreen |
+| `phone-scale` | Star Wars | On phones, menus and buttons are as large as in the other games |
 | `hide-dead-services` | all | Hides buttons and messages of discontinued online services |
 | `offline-shop` | all | Everything sold for real money can be earned by playing |
 | `game-statistics` | all | Statistics page with achievements and progress to 100 % |
@@ -95,6 +98,7 @@ Each APK is matched to its game by the library and extracted to `build/games/<id
 Cross builds use the recompiler built for this machine (`-DSLINGSHOT_HOST_TOOLS=build/host-tools`):
 
 - Windows: `-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/llvm-mingw.cmake -DLLVM_MINGW=<llvm-mingw>`
+- Nintendo Switch: `-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/switch.cmake -DDEVKITPRO=<devkitpro>` builds `bin/slingshot-<id>.nro`; needs devkitPro's `devkitA64`, `libnx`, `switch-tools` and `switch-sdl2`
 - Android: `-DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 -DSLINGSHOT_ANDROID_SDK=<sdk> -DSLINGSHOT_JDK=<jdk>` builds `bin/slingshot-<id>.apk`, signed with `-DSLINGSHOT_ANDROID_KEYSTORE` (created if missing; updates need the same key)
 
 The builder app is a separate project: `cmake -S tools/builder -B build-builder && cmake --build build-builder` builds `build-builder/slingshot-builder` (Qt 6.5 or newer). It builds in KDE's Breeze style and uses it everywhere; `-DSLINGSHOT_BUILDER_BREEZE=OFF` keeps Qt's platform styles.
@@ -115,7 +119,7 @@ build/bin/slingshot-<id> [options] [game-dir]
 | `--locale <ll_CC>` | Game language, e.g. `de_DE` |
 | `--dump-scripts <dir>` | Write the game's scripts and configs out decrypted |
 
-Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`) on Linux, `%APPDATA%\slingshot-animals-recomp\<id>\` on Windows and `~/Library/Application Support/slingshot-animals-recomp/<id>/` on macOS; on Android they stay in the app's storage until it is uninstalled. They are encrypted by the game; copy the folder while the game is not running to back them up.
+Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`) on Linux, `%APPDATA%\slingshot-animals-recomp\<id>\` on Windows, `~/Library/Application Support/slingshot-animals-recomp/<id>/` on macOS and `sdmc:/switch/slingshot-animals-recomp/<id>/` on the Switch; on Android they stay in the app's storage until it is uninstalled. They are encrypted by the game; copy the folder while the game is not running to back them up.
 
 ## Modding
 

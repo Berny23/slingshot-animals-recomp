@@ -5,11 +5,19 @@
 //   Lists the app icon's files, the largest first.
 // slingshot-apk pack <out.apk> <base.apk> <classes.dex> <abi> <game-dir> <lib.so>...
 //   Builds an unsigned Android package (pack.hpp).
+// slingshot-apk nro-icon <icon.png> <icon.jpg>
+//   The icon of a Nintendo Switch homebrew (256 x 256 JPEG).
+// slingshot-apk nx-elf <in.elf> <out.elf>
+//   The Switch executable without GCS instructions that Ryujinx cannot translate (nx_elf.hpp).
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 
 #include "android_res.hpp"
 #include "extract.hpp"
+#include "image.hpp"
+#include "nx_elf.hpp"
 #include "pack.hpp"
 #include "zip.hpp"
 
@@ -19,8 +27,10 @@ int usage(const char* argv0) {
     std::fprintf(stderr,
                  "usage: %s extract <game.apk> <out-dir> <library> <sha256>\n"
                  "       %s icons <game.apk>\n"
-                 "       %s pack <out.apk> <base.apk> <classes.dex> <abi> <game-dir> <lib.so>...\n",
-                 argv0, argv0, argv0);
+                 "       %s pack <out.apk> <base.apk> <classes.dex> <abi> <game-dir> <lib.so>...\n"
+                 "       %s nro-icon <icon.png> <icon.jpg>\n"
+                 "       %s nx-elf <in.elf> <out.elf>\n",
+                 argv0, argv0, argv0, argv0, argv0);
     return 2;
 }
 
@@ -39,6 +49,21 @@ int main(int argc, char** argv) {
         if (!zip.open(argv[2])) return fail(zip.error());
         for (const auto& i : apk::app_icons(zip))
             std::printf("%ux%u %u dpi %s\n", i.width, i.height, i.density ? i.density : 160, i.path.c_str());
+        return 0;
+    }
+    if (cmd == "nro-icon" && argc == 4) {
+        std::ifstream in(argv[2], std::ios::binary);
+        const std::vector<uint8_t> png((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const auto img = apk::decode_png(png);
+        if (!img) return fail(std::string(argv[2]) + ": not a supported PNG");
+        const auto jpg = apk::encode_jpeg(apk::icon_square(*img, 256), 92);
+        std::ofstream out(argv[3], std::ios::binary);
+        if (!out.write(reinterpret_cast<const char*>(jpg.data()), std::streamsize(jpg.size()))) return fail(std::string("cannot write ") + argv[3]);
+        return 0;
+    }
+    if (cmd == "nx-elf" && argc == 4) {
+        std::string error;
+        if (apk::patch_switch_elf(argv[2], argv[3], error) < 0) return fail(error);
         return 0;
     }
     if (cmd == "extract" && argc == 6) {
