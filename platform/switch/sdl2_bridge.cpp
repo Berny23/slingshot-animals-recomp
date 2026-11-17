@@ -220,14 +220,19 @@ std::string system_locale() {
     setExit();
     if (R_FAILED(r)) return "en_US";
     char text[9] = {};
-    std::memcpy(text, &code, 8);  // e.g. "en-US", "ja", "zh-Hans"
-    std::string s(text);
-    if (s == "zh-Hans") return "zh_CN";
-    if (s == "zh-Hant") return "zh_TW";
-    if (s == "es-419") return "es_MX";
-    for (char& c : s)
-        if (c == '-') c = '_';
-    return s;
+    std::memcpy(text, &code, 8);  // e.g. "en-US", "de", "zh-Hans"
+    const std::string s(text);
+    // The games need a country too (a bare "de" falls back to English).
+    static const struct {
+        const char *code, *locale;
+    } kLocales[] = {{"ja", "ja_JP"},      {"en-US", "en_US"},   {"fr", "fr_FR"},     {"de", "de_DE"},
+                    {"it", "it_IT"},      {"es", "es_ES"},      {"zh-CN", "zh_CN"},  {"ko", "ko_KR"},
+                    {"nl", "nl_NL"},      {"pt", "pt_PT"},      {"ru", "ru_RU"},     {"zh-TW", "zh_TW"},
+                    {"en-GB", "en_GB"},   {"fr-CA", "fr_CA"},   {"es-419", "es_MX"}, {"zh-Hans", "zh_CN"},
+                    {"zh-Hant", "zh_TW"}, {"pt-BR", "pt_BR"}};
+    for (const auto& l : kLocales)
+        if (s == l.code) return l.locale;
+    return "en_US";
 }
 
 }  // namespace sdl2_bridge
