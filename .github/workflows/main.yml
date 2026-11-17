@@ -1,0 +1,90 @@
+
+name: Build Slingshot Animals Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_apk_url:
+        description: "Direct download URL of your legally obtained supported game APK"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build clang lld \
+            pkg-config git curl unzip zip \
+            libx11-dev libxext-dev
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager "ndk;27.2.12479018" "platform-tools"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> $GITHUB_ENV
+
+      - name: Download original game APK
+        run: |
+          mkdir -p game-input
+          curl -fL "${{ inputs.game_apk_url }}" \
+            -o game-input/game.apk
+          test -s game-input/game.apk
+
+      - name: Build host tools
+        run: |
+          cmake -S . -B build/host-tools \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSLINGSHOT_TOOLS_ONLY=ON
+
+          cmake --build build/host-tools \
+            --parallel 2
+
+      - name: Build Android APK
+        run: |
+          cmake -S . -B build-android \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGAME_APKS="$GITHUB_WORKSPACE/game-input/game.apk" \
+            -DSLINGSHOT_HOST_TOOLS="$GITHUB_WORKSPACE/build/host-tools" \
+            -DSLINGSHOT_SYSTEM_DEPS=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DSLINGSHOT_ANDROID_SDK="$ANDROID_SDK_ROOT" \
+            -DSLINGSHOT_JDK="$JAVA_HOME"
+
+          cmake --build build-android --parallel 2
+
+      - name: Find APK
+        run: |
+          find build-android -name '*.apk' -type f
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: slingshot-animals-android
+          path: build-android/bin/*.apk
+          if-no-files-found: error
+          retention-days: 14
