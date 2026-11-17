@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // slingshot-builder                 the window
 // slingshot-builder --build <apk> [--android] [--only <folder|file.apk>] [--mods <a,b>|none]
 //                                   the same build in the terminal
@@ -87,16 +88,17 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
 #endif
 #ifdef SLINGSHOT_BREEZE
-    // Breeze unless a style is asked for (-style, QT_STYLE_OVERRIDE).
     // Breeze unless a style is asked for (-style, and QT_STYLE_OVERRIDE except
     // on Windows, where it is often set system-wide for other apps).
 #ifdef _WIN32
     bool own_style = false;
 #else
     bool own_style = qEnvironmentVariableIsSet("QT_STYLE_OVERRIDE");
+#endif
     for (int i = 1; i < argc; ++i)
         own_style |= !std::strcmp(argv[i], "-style") || !std::strncmp(argv[i], "-style=", 7) ||
                      !std::strcmp(argv[i], "--style") || !std::strncmp(argv[i], "--style=", 8);
+#endif
     QApplication app(argc, argv);
 #ifdef SLINGSHOT_BREEZE
     if (!own_style) builder::use_breeze(app);
