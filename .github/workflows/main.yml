@@ -1,0 +1,70 @@
+yaml
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: 'Direct download URL for your base game APK'
+        required: true
+        type: string
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake curl unzip
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK and NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and Build-Tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.3.11579264"
+
+      - name: Download base game APK
+        run: |
+          mkdir -p input_apk
+          curl -L "${{ github.event.inputs.apk_url }}" -o input_apk/base.apk
+
+      - name: Build Host Tools
+        run: |
+          cmake -S . -B build-host -G Ninja -DSLINGSHOT_SYSTEM_DEPS=OFF
+          cmake --build build-host --target host-tools
+
+      - name: Cross-compile Android APK
+        run: |
+          NDK_PATH="$ANDROID_HOME/ndk/26.3.11579264"
+          cmake -S . -B build-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_PATH/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DSLINGSHOT_HOST_TOOLS=build-host/host-tools \
+            -DSLINGSHOT_ANDROID_SDK="$ANDROID_HOME" \
+            -DSLINGSHOT_JDK="$JAVA_HOME" \
+            -DSLINGSHOT_ANDROID_KEYSTORE="$GITHUB_WORKSPACE/slingshot.jks" \
+            -DGAME_APKS="$GITHUB_WORKSPACE/input_apk/base.apk"
+          cmake --build build-android
+
+      - name: Upload APK and Keystore Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: slingshot-android-build
+          path: |
+            build-android/bin/*.apk
+            slingshot.jks
+          retention-days: 7
