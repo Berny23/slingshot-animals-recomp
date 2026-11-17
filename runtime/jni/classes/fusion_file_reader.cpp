@@ -46,11 +46,13 @@ std::optional<Bytes> first_zip_entry(const Bytes& zip) {
     if (method == 0) return Bytes(zip.begin() + long(data), zip.begin() + long(data + packed));
     if (method != 8) return std::nullopt;
     Bytes out(size);
+    // zlib refuses a null output buffer, which an empty vector may have.
+    uint8_t none = 0;
     z_stream s{};
     if (inflateInit2(&s, -MAX_WBITS) != Z_OK) return std::nullopt;
     s.next_in = const_cast<Bytef*>(zip.data() + data);
     s.avail_in = packed;
-    s.next_out = out.data();
+    s.next_out = out.empty() ? &none : out.data();
     s.avail_out = size;
     const int r = inflate(&s, Z_FINISH);
     inflateEnd(&s);

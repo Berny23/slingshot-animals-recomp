@@ -179,6 +179,8 @@ std::optional<std::vector<uint8_t>> ZipReader::read(const ZipEntry& e) {
         out = std::move(raw);
     } else if (e.method == 8) {
         out.resize(e.size);
+        // zlib refuses a null output buffer, which an empty vector may have.
+        uint8_t none = 0;
         z_stream z{};
         if (inflateInit2(&z, -MAX_WBITS) != Z_OK) {
             error_ = "zlib error";
@@ -186,7 +188,7 @@ std::optional<std::vector<uint8_t>> ZipReader::read(const ZipEntry& e) {
         }
         z.next_in = raw.data();
         z.avail_in = uInt(raw.size());
-        z.next_out = out.data();
+        z.next_out = out.empty() ? &none : out.data();
         z.avail_out = uInt(out.size());
         const int r = inflate(&z, Z_FINISH);
         inflateEnd(&z);
