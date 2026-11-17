@@ -2,7 +2,7 @@
 
 <h1 align="center">slingshot-animals-recomp</h1>
 
-Unofficial static recompilation of Rovio's Android *Angry Birds* games. Each game's native ARM library is translated to C++ and runs natively on Linux, Windows, macOS and 64-bit Android, without an emulator.
+Unofficial static recompilation of Rovio's old Android *Angry Birds* games. Each game's native ARM library is translated to C++ and runs natively on Linux, Windows, macOS and 64-bit Android, without an emulator.
 
 > [!IMPORTANT]
 > **No game files are included or linked here.** You need your own legally obtained copy of each game.
