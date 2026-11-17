@@ -212,6 +212,19 @@ int rename(const char* from, const char* to) {
         default: errno = EIO; break;
     }
     return -1;
+#elif defined(__SWITCH__)
+    // Horizon's file system refuses an existing target too (the game saves through
+    // <file>.tmp and a rename, so nothing would be saved after the first time).
+    if (::rename(from, to) == 0) return 0;
+    if (errno != EEXIST) return -1;
+    struct stat src{}, dst{};
+    if (::stat(from, &src) != 0 || ::stat(to, &dst) != 0) return -1;
+    if (S_ISDIR(src.st_mode) != S_ISDIR(dst.st_mode)) {
+        errno = S_ISDIR(dst.st_mode) ? EISDIR : ENOTDIR;
+        return -1;
+    }
+    if ((S_ISDIR(dst.st_mode) ? ::rmdir(to) : ::unlink(to)) != 0) return -1;  // rmdir: ENOTEMPTY as in POSIX
+    return ::rename(from, to);
 #else
     return ::rename(from, to);
 #endif

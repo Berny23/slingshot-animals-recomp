@@ -47,4 +47,13 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+# No pkg-config: the host's (FreeType includes FindPkgConfig) knows only the
+# host's libraries; on Windows it may be MSYS2's, under Wine even Linux's
+# /bin/pkg-config. A false value that is not NOTFOUND skips the search.
+set(PKG_CONFIG_EXECUTABLE OFF)
+# CMake's Generic platform searches programs in /bin: on Windows that is no
+# Windows directory (under Wine it is Linux's, whose programs cannot be started).
+if(CMAKE_HOST_WIN32)
+    list(APPEND CMAKE_SYSTEM_IGNORE_PATH /bin)
+endif()
 include_directories(SYSTEM "${DEVKITPRO}/libnx/include")

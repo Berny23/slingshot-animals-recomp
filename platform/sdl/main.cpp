@@ -374,6 +374,12 @@ int run(int argc, char** argv) {
 #endif
         window = SDL_CreateWindow(recomp::game.title, 1280, 720,
                                   SDL_WINDOW_OPENGL | mode | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        // Wine on X11 has no window pixel formats with alpha, which SDL asks for by default.
+        if (!window) {
+            SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
+            window = SDL_CreateWindow(recomp::game.title, 1280, 720,
+                                      SDL_WINDOW_OPENGL | mode | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        }
         if (window) gl = SDL_GL_CreateContext(window);
         if (window && !gl) {
             SDL_DestroyWindow(window);

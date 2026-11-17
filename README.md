@@ -12,15 +12,16 @@ Unofficial static recompilation of Rovio's old Android *Angry Birds* games. Each
 ## Install
 
 1. Download **Slingshot Builder** for your system from the [releases](https://github.com/Berny23/slingshot-animals-recomp/releases/latest) (Linux AppImage, Windows exe, macOS app).
-2. Open it, drop the APK of a [supported version](#supported-versions) onto the window and press **Build & Install**.
 
-The game then appears in your system as a separate app. For Android, you can chose to build an APK file and copy it onto your phone, or install the app via ADB directly on a connected phone (recommended for advanced users).
+2. Open the builder:
+    - **Linux**: Just run the AppImage.
+    - **Windows**: As the builder is not signed, SmartScreen may warn you, which is normal. Just click *More info* → *Run anyway*.
+    - **MacOS**: Open the builder with right-click → *Open* the first time. It needs Apple's Command Line Tools and offers to install them.
 
-For a Nintendo Switch that runs homebrew, choose *Build for Nintendo Switch* in the menu of the build button, copy the `.nro` file into `switch/` on the SD card and start it from the Homebrew Menu.
-
-- Linux: Just run the AppImage.
-- Windows: As the builder is not signed, SmartScreen may warn you, which is normal. Just click *More info* → *Run anyway*.
-- MacOS: Open the builder with right-click → *Open* the first time. It needs Apple's Command Line Tools and offers to install them.
+3. Drop the APK of a [supported version](#supported-versions) onto the window, then build for your favorite platform:
+    - **Linux/Windows/macOS**: Press *Build & Install*. Each game then appears in your system as a separate app.
+    - **Android**: Select *Build Android APK only...*, choose a location and wait for building to finish. Then copy the generated APK file onto your phone and install it. Advanced users can alternatively install via ADB directly on a connected phone.
+    - **Nintendo Switch (homebrew)**: Select *Build for Nintendo Switch (homebrew)...* wait for building to finish. Then copy the `.nro` file into `switch/` on your SD card and start the game from the Homebrew Menu.
 
 To uninstall the games on Linux, just delete them under `~/.local/lib/slingshot-animals-recomp/` and their menu entries at `~/.local/share/applications/slingshot-<id>.desktop`.
 
