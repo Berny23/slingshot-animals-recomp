@@ -15,6 +15,9 @@
 //   and exits.
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -139,6 +142,35 @@ std::string android_game_dir() {
     }
     SDL_SaveFile(stamp.c_str(), files.data(), files.size());  // last: marks a complete copy
     return dir;
+}
+
+// DeviceInfoWrapper's values: Display.getRealMetrics (the whole screen, system bars
+// included) in landscape, the activity's orientation, and the mean of xdpi and ydpi.
+bool android_display(recomp::java::Display& d) {
+    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (!env || !activity) return false;
+    jclass act = env->GetObjectClass(activity);
+    jobject wm = env->CallObjectMethod(activity, env->GetMethodID(act, "getWindowManager", "()Landroid/view/WindowManager;"));
+    jclass wm_cls = env->FindClass("android/view/WindowManager");
+    jobject disp = env->CallObjectMethod(wm, env->GetMethodID(wm_cls, "getDefaultDisplay", "()Landroid/view/Display;"));
+    jclass dm_cls = env->FindClass("android/util/DisplayMetrics");
+    jobject dm = env->NewObject(dm_cls, env->GetMethodID(dm_cls, "<init>", "()V"));
+    jclass disp_cls = env->FindClass("android/view/Display");
+    env->CallVoidMethod(disp, env->GetMethodID(disp_cls, "getRealMetrics", "(Landroid/util/DisplayMetrics;)V"), dm);
+    const bool ok = !env->ExceptionCheck();
+    env->ExceptionClear();
+    if (ok) {
+        const int w = env->GetIntField(dm, env->GetFieldID(dm_cls, "widthPixels", "I"));
+        const int h = env->GetIntField(dm, env->GetFieldID(dm_cls, "heightPixels", "I"));
+        d.width = w > h ? w : h;
+        d.height = w > h ? h : w;
+        d.dpi = (env->GetFloatField(dm, env->GetFieldID(dm_cls, "xdpi", "F")) +
+                 env->GetFloatField(dm, env->GetFieldID(dm_cls, "ydpi", "F"))) / 2;
+    }
+    for (jobject o : {jobject(act), wm, jobject(wm_cls), disp, jobject(dm_cls), dm, jobject(disp_cls)}) env->DeleteLocalRef(o);
+    env->DeleteLocalRef(activity);
+    return ok && d.width > 0 && d.height > 0;
 }
 #endif
 
@@ -324,8 +356,14 @@ int main(int argc, char** argv) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, desktop ? 1 : 0);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+#ifdef __ANDROID__
+        // Immersive: the game covers the system bars, as the original's full-screen activity.
+        constexpr SDL_WindowFlags mode = SDL_WINDOW_FULLSCREEN;
+#else
+        constexpr SDL_WindowFlags mode = SDL_WINDOW_RESIZABLE;
+#endif
         window = SDL_CreateWindow(recomp::game.title, 1280, 720,
-                                  SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+                                  SDL_WINDOW_OPENGL | mode | SDL_WINDOW_HIGH_PIXEL_DENSITY);
         if (window) gl = SDL_GL_CreateContext(window);
         if (window && !gl) {
             SDL_DestroyWindow(window);
@@ -354,8 +392,13 @@ int main(int argc, char** argv) {
     recomp::gles::set_desktop_gl(desktop_gl);
     {
         recomp::java::Display d;
-        SDL_GetWindowSizeInPixels(window, &d.width, &d.height);
-        d.dpi = 160.0f * SDL_GetWindowDisplayScale(window);
+#ifdef __ANDROID__
+        if (!android_display(d))
+#endif
+        {
+            SDL_GetWindowSizeInPixels(window, &d.width, &d.height);
+            d.dpi = 160.0f * SDL_GetWindowDisplayScale(window);
+        }
         recomp::java::set_display(d);
     }
 
