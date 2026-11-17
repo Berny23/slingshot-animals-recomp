@@ -29,6 +29,7 @@ public:
     void open_apk(const QString& path);
 
 protected:
+    bool event(QEvent* e) override;
     void dragEnterEvent(QDragEnterEvent* e) override;
     void dropEvent(QDropEvent* e) override;
     void closeEvent(QCloseEvent* e) override;
@@ -40,7 +41,7 @@ private:
     void on_finished(bool ok, const QString& message, const QString& path);
     void set_building(bool building);
     void fit();
-    void pin_height();
+    void pin_size();
     void update_cache_size();
     void clear_cache();
     void show_about();
@@ -64,8 +65,8 @@ private:
     QWidget* progress_panel_;
     QProgressBar* progress_;
     QLabel *status_, *eta_;
-    QPushButton *cancel_, *build_, *play_, *open_folder_, *clear_cache_, *details_;
-    QToolButton* build_menu_;
+    QPushButton *cancel_, *play_, *open_folder_, *clear_cache_, *details_;
+    QToolButton* build_;  // Build & Install, the other modes in its menu
     QPlainTextEdit* log_;
 };
 

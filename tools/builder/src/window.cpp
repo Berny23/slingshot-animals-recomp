@@ -295,30 +295,22 @@ Window::Window() : games_(load_games(source_dir())) {
     });
     bottom->addWidget(play_);
 
-    // Build & Install, with the other modes in its menu.
-    auto* split = new QHBoxLayout;
-    split->setSpacing(0);
-    build_ = new QPushButton("Build && Install", this);
-    build_->setDefault(true);
+    // Build & Install: a split button with the other modes in its menu.
+    build_ = new QToolButton(this);
+    build_->setText("Build && Install");
+    build_->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    build_->setPopupMode(QToolButton::MenuButtonPopup);
     build_->setEnabled(false);
     build_->setMinimumWidth(150);
-    connect(build_, &QPushButton::clicked, this, [this] { start(false, true); });
-    split->addWidget(build_);
-    build_menu_ = new QToolButton(this);
-    build_menu_->setArrowType(Qt::DownArrow);
-    build_menu_->setPopupMode(QToolButton::InstantPopup);
-    build_menu_->setToolTip("More ways to build");
-    build_menu_->setAccessibleName("More ways to build");
-    build_menu_->setEnabled(false);
-    build_menu_->setFixedHeight(build_->sizeHint().height());
-    auto* menu = new QMenu(build_menu_);
+    build_->setMinimumHeight(play_->sizeHint().height());
+    connect(build_, &QToolButton::clicked, this, [this] { start(false, true); });
+    auto* menu = new QMenu(build_);
     menu->addAction("Build only (save the game to a folder)…", this, [this] { start(false, false); });
     menu->addSeparator();
     menu->addAction("Build for Android (install on a connected device)", this, [this] { start(true, true); });
     menu->addAction("Build Android APK only…", this, [this] { start(true, false); });
-    build_menu_->setMenu(menu);
-    split->addWidget(build_menu_);
-    bottom->addLayout(split);
+    build_->setMenu(menu);
+    bottom->addWidget(build_);
     root->addLayout(bottom);
 
     update_cache_size();
@@ -375,7 +367,6 @@ void Window::open_apk(const QString& path) {
     game_ = -1;
     apk_.clear();
     build_->setEnabled(false);
-    build_menu_->setEnabled(false);
     advanced_->hide();
     advanced_panel_->hide();
     advanced_->setChecked(false);
@@ -428,7 +419,6 @@ void Window::open_apk(const QString& path) {
     mods_scroll_->setFixedHeight(std::min(mods_scroll_->widget()->sizeHint().height(), 260));
     advanced_->show();
     build_->setEnabled(true);
-    build_menu_->setEnabled(true);
     build_->setFocus();
     fit();
 }
@@ -507,7 +497,6 @@ void Window::set_building(bool building) {
     cancel_->setVisible(building);
     cancel_->setEnabled(building);
     build_->setEnabled(!building && game_ >= 0);
-    build_menu_->setEnabled(!building && game_ >= 0);
     drop_pages_->setEnabled(!building);
     clear_cache_->setEnabled(!building);
     advanced_panel_->setEnabled(!building);
@@ -515,20 +504,21 @@ void Window::set_building(bool building) {
     fit();
 }
 
-// Resizes the window to its content. The height is also pinned with minimum and maximum
-// heights: the window manager may restore an older size (e.g. when a file dialog closes), and
-// Qt sets no minimum height itself for layouts with word-wrapped labels. With the log shown,
-// the window can grow.
+// Resizes the window to its content and pins the size with limits: the window manager may
+// restore an older size (e.g. when a file dialog closes), and Qt sets no minimum height itself
+// for layouts with word-wrapped labels. With the log shown, the window can grow.
 void Window::fit() {
     layout()->activate();
     adjustSize();
-    pin_height();
+    pin_size();
 }
 
-void Window::pin_height() {
+void Window::pin_size() {
     QLayout* l = layout();
     l->activate();
-    const int h = l->hasHeightForWidth() ? l->totalHeightForWidth(width()) : l->totalSizeHint().height();
+    setMinimumWidth(std::max(520, l->totalMinimumSize().width()));
+    const int w = std::max(width(), minimumWidth());
+    const int h = l->hasHeightForWidth() ? l->totalHeightForWidth(w) : l->totalSizeHint().height();
     const int min = log_->isVisible() ? h - log_->sizeHint().height() + log_->minimumHeight() : h;
     const int max = log_->isVisible() ? QWIDGETSIZE_MAX : h;
     if (minimumHeight() == min && maximumHeight() == max) return;
@@ -538,13 +528,20 @@ void Window::pin_height() {
     setMaximumHeight(max);
 }
 
+bool Window::event(QEvent* e) {
+    const bool handled = QWidget::event(e);
+    if (e->type() == QEvent::LayoutRequest) pin_size();  // e.g. a button's text changed
+    return handled;
+}
+
 void Window::resizeEvent(QResizeEvent* e) {
     QWidget::resizeEvent(e);
-    if (e->size().width() != e->oldSize().width()) pin_height();  // wrapped labels change their height
+    if (e->size().width() != e->oldSize().width()) pin_size();  // wrapped labels change their height
     // A size from the window manager is applied even outside the limits: correct it.
-    if (height() < minimumHeight() || height() > maximumHeight()) {
+    const QSize min = minimumSize(), max = maximumSize();
+    if (width() < min.width() || height() < min.height() || height() > max.height()) {
         QTimer::singleShot(0, this, [this] {
-            resize(width(), std::clamp(height(), minimumHeight(), maximumHeight()));
+            resize(std::max(width(), minimumWidth()), std::clamp(height(), minimumHeight(), maximumHeight()));
         });
     }
 }
