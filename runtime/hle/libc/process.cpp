@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Locale, dynamic linker iteration and raw system calls.
 #include <sched.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 
 #include <cerrno>
 #include <csignal>
@@ -10,6 +8,7 @@
 #include <cstdlib>
 #include <ctime>
 
+#include "host.hpp"
 #include "libc.hpp"
 #include "recomp/game.hpp"
 #include "recomp/memory.hpp"
@@ -60,7 +59,8 @@ u32 h___gnu_Unwind_Find_exidx(u32, u32 count_out) {
 
 int h_raise(int sig) {
     std::fprintf(stderr, "recomp: guest raised signal %d\n", sig);
-    if (sig == SIGABRT || sig == SIGSEGV || sig == SIGILL || sig == SIGBUS || sig == SIGFPE) std::abort();
+    // Linux numbers: SIGILL 4, SIGABRT 6, SIGBUS 7, SIGFPE 8, SIGSEGV 11.
+    if (sig == 4 || sig == 6 || sig == 7 || sig == 8 || sig == 11) std::abort();
     return 0;
 }
 
@@ -89,19 +89,19 @@ int h_setjmp(CPU* c) {
 // Linux ARM EABI system call numbers used by the game.
 u32 do_syscall(u32 nr, ArgReader& a) {
     switch (nr) {
-        case 20: return u32(::getpid());                       // getpid
-        case 224: return u32(::syscall(SYS_gettid));           // gettid
+        case 20: return u32(host::process_id());               // getpid
+        case 224: return u32(host::thread_id());               // gettid
         case 4: {                                              // write
             const int fd = int(a.u32());
             const u32 buf = a.u32(), n = a.u32();
-            return fd == 1 || fd == 2 ? u32(::write(fd, g_mem + buf, n)) : u32(-EBADF);
+            if (fd != 1 && fd != 2) return u32(-EBADF);
+            return u32(std::fwrite(g_mem + buf, 1, n, fd == 1 ? stdout : stderr));
         }
         case 158: return u32(::sched_yield());                 // sched_yield
         case 263: {                                            // clock_gettime
             const int id = int(a.u32());
             const u32 ts = a.u32();
-            timespec t{};
-            ::clock_gettime(clockid_t(id), &t);
+            const timespec t = host::clock(id);
             st32(ts, u32(t.tv_sec));
             st32(ts + 4, u32(t.tv_nsec));
             return 0;

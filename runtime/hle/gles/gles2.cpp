@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// OpenGL ES 2.0 imports, forwarded to the host's GLES2 implementation.
+// OpenGL ES 2.0 imports, forwarded to the host's GLES2 implementation, or to
+// desktop OpenGL 2.1 where the host has no GLES (gles::set_desktop_gl).
 //
 // The platform layer creates the context and installs a symbol loader
 // (gles::set_loader). Guest memory is host memory at g_mem + address, so
 // most pointers translate directly; offsets into bound buffers must stay
 // offsets, which needs the buffer bindings tracked here.
 #define GL_GLES_PROTOTYPES 0
-#include <GLES2/gl2.h>
+#define SDL_USE_BUILTIN_OPENGL_DEFINITIONS 1
+#include <SDL3/SDL_opengles2.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -24,8 +26,39 @@
 namespace recomp::gles {
 namespace {
 Loader g_loader = nullptr;
-}
+bool g_desktop = false;
+}  // namespace
 void set_loader(Loader l) { g_loader = l; }
+
+void set_desktop_gl(bool desktop) {
+    g_desktop = desktop;
+    if (!desktop || !g_loader) return;
+    // Shaders write gl_PointSize and read gl_PointCoord as in GLES.
+    if (auto enable = reinterpret_cast<void (*)(GLenum)>(g_loader("glEnable"))) {
+        enable(0x8642);  // GL_VERTEX_PROGRAM_POINT_SIZE
+        enable(0x8861);  // GL_POINT_SPRITE
+    }
+}
+bool desktop_gl() { return g_desktop; }
+
+std::string host_shader(const std::string& es) {
+    if (!g_desktop) return es;
+    // GLSL 1.20 knows no precision qualifiers; "#version 100" and precision statements go.
+    std::string out = "#version 120\n#define lowp\n#define mediump\n#define highp\n";
+    size_t pos = 0;
+    while (pos < es.size()) {
+        size_t end = es.find('\n', pos);
+        if (end == std::string::npos) end = es.size();
+        std::string line = es.substr(pos, end - pos);
+        const size_t first = line.find_first_not_of(" \t");
+        const std::string trimmed = first == std::string::npos ? "" : line.substr(first);
+        if (trimmed.rfind("#version", 0) == 0 || trimmed.rfind("precision ", 0) == 0) line = "";
+        out += line;
+        out += '\n';
+        pos = end + 1;
+    }
+    return out;
+}
 }  // namespace recomp::gles
 
 namespace recomp::hle {
@@ -87,6 +120,10 @@ u32 h_glGetString(u32 name) {
     std::string v = s;
     if (name == GL_VERSION && v.rfind("OpenGL ES", 0) != 0) v = "OpenGL ES 2.0 " + v;
     if (name == GL_SHADING_LANGUAGE_VERSION && v.rfind("OpenGL ES", 0) != 0) v = "OpenGL ES GLSL ES 1.00 " + v;
+    // What the games look for, as a GLES driver names it (ETC1 is decoded here).
+    if (name == GL_EXTENSIONS && gles::desktop_gl())
+        v = "GL_OES_compressed_ETC1_RGB8_texture GL_OES_texture_npot GL_OES_vertex_buffer_object "
+            "GL_OES_rgb8_rgba8 GL_OES_depth24 GL_OES_packed_depth_stencil";
     const u32 g = mem::static_string(v);
     cache.emplace(name, g);
     return g;
@@ -142,10 +179,72 @@ void h_glTexSubImage2D(u32 t, int level, int x, int y, int w, int h, u32 fmt, u3
     GL(glTexSubImage2D, void(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void*));
     fn(t, level, x, y, w, h, fmt, type, P(data));
 }
+// ETC1 (OES_compressed_ETC1_RGB8_texture): 4x4 blocks of 64 bits to RGB8.
+std::vector<uint8_t> decode_etc1(const uint8_t* src, int w, int h) {
+    static const int table[8][4] = {{2, 8, -2, -8},       {5, 17, -5, -17},     {9, 29, -9, -29},
+                                    {13, 42, -13, -42},   {18, 60, -18, -60},   {24, 80, -24, -80},
+                                    {33, 106, -33, -106}, {47, 183, -47, -183}};
+    std::vector<uint8_t> out(size_t(w) * size_t(h) * 3);
+    auto clamp = [](int v) { return uint8_t(v < 0 ? 0 : v > 255 ? 255 : v); };
+    for (int by = 0; by < h; by += 4)
+        for (int bx = 0; bx < w; bx += 4, src += 8) {
+            const uint32_t hi = uint32_t(src[0]) << 24 | uint32_t(src[1]) << 16 | uint32_t(src[2]) << 8 | src[3];
+            const uint32_t lo = uint32_t(src[4]) << 24 | uint32_t(src[5]) << 16 | uint32_t(src[6]) << 8 | src[7];
+            const bool diff = hi & 2, flip = hi & 1;
+            int base[2][3];
+            for (int c = 0; c < 3; ++c) {
+                const int shift = 24 - 8 * c;
+                if (diff) {
+                    const int a = (hi >> (shift + 3)) & 31;
+                    int d = (hi >> shift) & 7;
+                    if (d >= 4) d -= 8;
+                    base[0][c] = (a << 3) | (a >> 2);
+                    const int b = (a + d) & 31;
+                    base[1][c] = (b << 3) | (b >> 2);
+                } else {
+                    const int a = (hi >> (shift + 4)) & 15, b = (hi >> shift) & 15;
+                    base[0][c] = a * 17;
+                    base[1][c] = b * 17;
+                }
+            }
+            const int cw[2] = {int((hi >> 5) & 7), int((hi >> 2) & 7)};
+            for (int x = 0; x < 4; ++x)
+                for (int y = 0; y < 4; ++y) {
+                    const int px = bx + x, py = by + y;
+                    if (px >= w || py >= h) continue;
+                    const int sub = flip ? (y >= 2) : (x >= 2);
+                    const int i = x * 4 + y;
+                    const int idx = int(((lo >> (i + 16)) & 1) << 1 | ((lo >> i) & 1));
+                    // Pixel index (MSB, LSB): 0 +a, 1 +b, 2 -a, 3 -b.
+                    const int mod = table[cw[sub]][idx];
+                    uint8_t* o = &out[(size_t(py) * size_t(w) + size_t(px)) * 3];
+                    for (int c = 0; c < 3; ++c) o[c] = clamp(base[sub][c] + mod);
+                }
+        }
+    return out;
+}
+
+// Uploads tightly packed RGB8 rows (the unpack alignment is restored afterwards).
+void upload_rgb(u32 t, int level, int w, int h, int border, const uint8_t* rgb) {
+    GL(glTexImage2D, void(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*));
+    static const auto store = load<void(GLenum, GLint)>("glPixelStorei");
+    static const auto get = load<void(GLenum, GLint*)>("glGetIntegerv");
+    GLint align = 4;
+    get(GL_UNPACK_ALIGNMENT, &align);
+    store(GL_UNPACK_ALIGNMENT, 1);
+    fn(t, level, GL_RGB, w, h, border, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+    store(GL_UNPACK_ALIGNMENT, align);
+}
+
 void h_glCompressedTexImage2D(u32 t, int level, u32 ifmt, int w, int h, int border, int size, u32 data) {
+    if (gles::desktop_gl() && ifmt == 0x8D64 /*GL_ETC1_RGB8_OES*/) {
+        upload_rgb(t, level, w, h, border, decode_etc1(static_cast<const uint8_t*>(P(data)), w, h).data());
+        return;
+    }
     GL(glCompressedTexImage2D, void(GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void*));
     fn(t, level, ifmt, w, h, border, size, P(data));
 }
+
 void h_glCopyTexImage2D(u32 t, int level, u32 ifmt, int x, int y, int w, int h, int border) {
     GL(glCopyTexImage2D, void(GLenum, GLint, GLenum, GLint, GLint, GLsizei, GLsizei, GLint));
     fn(t, level, ifmt, x, y, w, h, border);
@@ -168,6 +267,7 @@ void h_glFramebufferTexture2D(u32 t, u32 a, u32 tt, u32 tex, int level) {
 }
 void h_glRenderbufferStorage(u32 t, u32 f, int w, int h) {
     GL(glRenderbufferStorage, void(GLenum, GLenum, GLsizei, GLsizei));
+    if (gles::desktop_gl() && f == 0x8D62 /*GL_RGB565*/) f = 0x8051;  // GL_RGB8
     fn(t, f, w, h);
 }
 u32 h_glCheckFramebufferStatus(u32 t) { GL(glCheckFramebufferStatus, GLenum(GLenum)); return fn(t); }
@@ -177,9 +277,15 @@ u32 h_glCreateShader(u32 type) { GL(glCreateShader, GLuint(GLenum)); return fn(t
 void h_glDeleteShader(u32 s) { GL(glDeleteShader, void(GLuint)); fn(s); }
 void h_glShaderSource(u32 shader, int count, u32 strings, u32 lengths) {
     GL(glShaderSource, void(GLuint, GLsizei, const GLchar* const*, const GLint*));
-    std::vector<const GLchar*> s(size_t(count > 0 ? count : 0));
-    for (int i = 0; i < count; ++i) s[size_t(i)] = mem::str(ld32(strings + 4 * u32(i)));
-    fn(shader, count, s.data(), static_cast<const GLint*>(P(lengths)));
+    std::string source;
+    for (int i = 0; i < count; ++i) {
+        const char* part = mem::str(ld32(strings + 4 * u32(i)));
+        const int32_t len = lengths ? int32_t(ld32(lengths + 4 * u32(i))) : -1;
+        source += len < 0 ? std::string(part) : std::string(part, size_t(len));
+    }
+    source = gles::host_shader(source);
+    const GLchar* text = source.c_str();
+    fn(shader, 1, &text, nullptr);
 }
 void h_glCompileShader(u32 s) { GL(glCompileShader, void(GLuint)); fn(s); }
 void h_glGetShaderiv(u32 s, u32 p, u32 out) { GL(glGetShaderiv, void(GLuint, GLenum, GLint*)); fn(s, p, static_cast<GLint*>(W(out))); }

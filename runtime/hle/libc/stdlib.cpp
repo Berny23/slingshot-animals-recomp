@@ -2,8 +2,6 @@
 // <stdlib.h> memory/process functions, errno, system information, dynamic
 // linker queries, signals and the network (always offline).
 #include <sched.h>
-#include <sys/utsname.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -15,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "host.hpp"
 #include "libc.hpp"
 #include "recomp/hle.hpp"
 #include "recomp/memory.hpp"
@@ -27,7 +26,7 @@ uint32_t guest_errno_addr() {
     if (!addr) addr = mem::alloc_zeroed(4);
     return addr;
 }
-void set_guest_errno(int e) { st32(guest_errno_addr(), uint32_t(e)); }
+void set_guest_errno(int e) { st32(guest_errno_addr(), uint32_t(host::linux_errno(e))); }
 
 namespace {
 using u32 = uint32_t;
@@ -149,7 +148,7 @@ int h_uname(u32 buf) {
     for (int i = 0; i < 6; ++i) std::snprintf(mem::str(buf + 65 * i), 65, "%s", fields[i]);
     return 0;
 }
-int h_getpid() { return int(::getpid()); }
+int h_getpid() { return host::process_id(); }
 int h_geteuid() { return 10123; }  // an app uid
 int h_getuid() { return h_geteuid(); }
 int h_getgid() { return h_geteuid(); }

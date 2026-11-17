@@ -1,6 +1,26 @@
-# slingshot-animals-recomp
+<p align="center"><img src="tools/builder/resources/builder.svg" alt="" width="128"></p>
 
-Unofficial static recompilation of Rovio's Android *Angry Birds* games. Each game's native ARM library is translated to C++ and runs natively on x86-64 Linux, without an emulator.
+<h1 align="center">slingshot-animals-recomp</h1>
+
+Unofficial static recompilation of Rovio's Android *Angry Birds* games. Each game's native ARM library is translated to C++ and runs natively on Linux, Windows, macOS and 64-bit Android, without an emulator.
+
+> [!IMPORTANT]
+> **No game files are included or linked here.** You need your own legally obtained copy of each game.
+>
+> The game is built locally on your device, for your personal use only.
+
+## Install
+
+1. Download **Slingshot Builder** for your system from the [releases](https://github.com/Berny23/slingshot-animals-recomp/releases/latest) (Linux AppImage, Windows exe, macOS app).
+2. Open it, drop the APK of a [supported version](#supported-versions) onto the window and press **Build & Install**.
+
+The game then appears in your system as a separate app. For Android, you can chose to build an APK file and copy it onto your phone, or install the app via ADB directly on a connected phone (recommended for advanced users).
+
+- Linux: Just run the AppImage.
+- Windows: As the builder is not signed, SmartScreen may warn you, which is normal. Just click *More info* → *Run anyway*.
+- MacOS: Open the builder with right-click → *Open* the first time. It needs Apple's Command Line Tools and offers to install them.
+
+To uninstall the games on Linux, just delete them under `~/.local/lib/slingshot-animals-recomp/` and their menu entries at `~/.local/share/applications/slingshot-<id>.desktop`.
 
 ## Features
 
@@ -8,26 +28,30 @@ Unofficial static recompilation of Rovio's Android *Angry Birds* games. Each gam
 - Plays offline: Rovio's online services, ads and in-app purchases are stubbed
 - Mouse or touch screen as on Android, Esc is the Back key
 - Language follows the system locale or `--locale`
-- Optional mods (all enabled by default):
+- Mods for keyboard and gamepad play, offline versions of online features and more, see below
+
+## Mods
+
+All mods are on by default. In the builder, *Advanced* chooses which ones a game starts with; `--no-mod <name>` turns one off for a single start.
 
 | Mod | Games | Description |
 | --- | --- | --- |
 | `mouse-wheel` | all | Mouse wheel zooms in levels and scrolls menus |
-| `keyboard` | all | Play with the keyboard: Space + W A S D or arrows aims and shoots, R restarts, P pauses |
-| `gamepad-pointer` | all | Play with a gamepad: the left stick moves a cursor, A taps, B is Back |
+| `keyboard` | all | Play with the keyboard: hold Space, aim with W A S D or arrows, release to shoot, Space again for the bird's ability; arrows move the camera, + / - zoom, R restarts, P pauses, Enter continues |
+| `gamepad-pointer` | all | Play with a gamepad: the left stick moves a cursor (right stick slowly), A taps, triggers zoom, B is Back |
 | `tap-to-skip` | all | Tap to skip the wait at the end of a level |
 | `fullscreen` | all | F11 toggles fullscreen |
 | `hide-dead-services` | all | Hides buttons and messages of discontinued online services |
+| `offline-shop` | all | Everything sold for real money can be earned by playing |
+| `game-statistics` | all | Statistics page with achievements and progress to 100 % |
 | `offline-league` | Classic | Mighty League without servers |
 | `offline-tournament` | Seasons | Pig Challenge without servers: weeks open one after another, all weeks replayable after the last |
-| `offline-shop` | all | Everything sold for real money can be earned by playing |
 | `composite-audio` | Star Wars, Star Wars II | Plays the menu music and power-up sounds again |
 | `offline-assets` | Star Wars II | Starts without the download server (see below) |
-| `audio-quality` | Stella | Better sound than on Android |
+| `audio-quality` | Stella | Stereo sound at 24 kHz, better than on Android |
 | `seasonal-menu` | Seasons | The main menu shows a random episode of the current season (Halloween, Christmas, ...). `--mod-option seasonal-menu.season=<name>` picks one |
 | `offline-clock` | Star Wars II | Timed features use the device's clock |
 | `missing-translations` | Rio | Translates texts the game shows only in English |
-| `game-statistics` | all | Statistics page with achievements and progress to 100 % |
 | `samsung-level` | Space, Star Wars II | Content once given only to Samsung devices is open everywhere |
 
 ## Supported versions
@@ -46,7 +70,7 @@ APKs with the `armeabi-v7a` library:
 
 The build checks each library's SHA-256.
 
-Star Wars II downloads its sounds and theme images from a server that is gone; without them it plays silence and draws simplified backgrounds. For the originals, copy `files/assets_service/` from a device installation (`/data/data/com.rovio.angrybirdsstarwarsii.ads/`) to:
+Star Wars II downloads its sounds and theme images from a server that is gone; without them it plays silence and draws simplified backgrounds. For the originals, copy `files/assets_service/` from a device installation (`/data/data/com.rovio.angrybirdsstarwarsii.ads/`) into the game's [save folder](#run), on Linux:
 
 ```
 ~/.local/share/slingshot-animals-recomp/starwars2/internal/files/assets_service/
@@ -56,7 +80,7 @@ Star Wars II downloads its sounds and theme images from a server that is gone; w
 
 ## Build
 
-Needs CMake 3.24, a C++20 compiler, Python 3, capstone, SDL3, FreeType, HarfBuzz, fontconfig, liblzma and zlib.
+Needs CMake 3.28, Ninja or Make and a C++20 compiler. On Linux also capstone, SDL3, FreeType, HarfBuzz, liblzma and zlib; elsewhere these are downloaded and built (`-DSLINGSHOT_SYSTEM_DEPS=OFF` does the same on Linux).
 
 ```
 cmake -S . -B build -DGAME_APKS="/path/to/angrybirds.apk;/path/to/angrybirdsrio.apk"
@@ -67,6 +91,13 @@ Each APK is matched to its game by the library and extracted to `build/games/<id
 
 - `-DSLINGSHOT_DEFAULT_MODS=all|none|<list>`: mods enabled by default, e.g. `"hide-dead-services;offline-shop"`
 - `-DSLINGSHOT_MODS=OFF`: build without mods
+
+Cross builds use the recompiler built for this machine (`-DSLINGSHOT_HOST_TOOLS=build/host-tools`):
+
+- Windows: `-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/llvm-mingw.cmake -DLLVM_MINGW=<llvm-mingw>`
+- Android: `-DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 -DSLINGSHOT_ANDROID_SDK=<sdk> -DSLINGSHOT_JDK=<jdk>` builds `bin/slingshot-<id>.apk`, signed with `-DSLINGSHOT_ANDROID_KEYSTORE` (created if missing; updates need the same key)
+
+The builder app is a separate project: `cmake -S tools/builder -B build-builder` (Qt 6.5 or newer). It builds in KDE's Breeze style and uses it everywhere; `-DSLINGSHOT_BUILDER_BREEZE=OFF` keeps Qt's platform styles.
 
 ## Run
 
@@ -84,7 +115,7 @@ build/bin/slingshot-<id> [options] [game-dir]
 | `--locale <ll_CC>` | Game language, e.g. `de_DE` |
 | `--dump-scripts <dir>` | Write the game's scripts and configs out decrypted |
 
-Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`). They are encrypted by the game; copy the folder while the game is not running to back them up.
+Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`) on Linux, `%APPDATA%\slingshot-animals-recomp\<id>\` on Windows and `~/Library/Application Support/slingshot-animals-recomp/<id>/` on macOS; on Android they stay in the app's storage until it is uninstalled. They are encrypted by the game; copy the folder while the game is not running to back them up.
 
 ## Modding
 
@@ -97,9 +128,7 @@ Sprite sheet descriptions (`*.sheet.json`, `*.compo.json`) are dumped for refere
 
 ## Note
 
-Only tested on x86-64 Linux.
-
-This project does not include any original game files. You need your own copies of the APKs.
+This project does not include any original game files. You need your own copies of the APKs. It is not affiliated with or endorsed by Rovio; *Angry Birds* is a trademark of Rovio Entertainment.
 
 ## License
 

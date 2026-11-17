@@ -13,9 +13,8 @@ target_include_directories(recomp_runtime PUBLIC core/include jni/include PRIVAT
 target_compile_options(recomp_runtime PRIVATE -Wall -Wextra -fno-strict-aliasing)
 target_compile_features(recomp_runtime PUBLIC cxx_std_20)
 find_package(Threads REQUIRED)
-find_package(Freetype REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(HARFBUZZ REQUIRED IMPORTED_TARGET harfbuzz)
-pkg_check_modules(LIBLZMA REQUIRED IMPORTED_TARGET liblzma)  # hle/fusion/asset_codec.cpp
-pkg_check_modules(ZLIB REQUIRED IMPORTED_TARGET zlib)  # jni/classes/fusion_file_reader.cpp
-target_link_libraries(recomp_runtime PUBLIC Threads::Threads PRIVATE Freetype::Freetype PkgConfig::HARFBUZZ PkgConfig::LIBLZMA PkgConfig::ZLIB)
+target_link_libraries(recomp_runtime PUBLIC Threads::Threads PRIVATE
+    slingshot::SDL3_headers  # hle/gles: the Khronos GLES2 headers
+    slingshot::freetype slingshot::harfbuzz
+    slingshot::lzma  # hle/fusion/asset_codec.cpp
+    slingshot::zlib)  # jni/classes/fusion_file_reader.cpp

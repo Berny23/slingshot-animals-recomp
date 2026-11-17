@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Function dispatch, import binding, thunks, guest threads and CPU support
 // routines called from generated code.
-#include <execinfo.h>
 #include <pthread.h>
-#include <signal.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <new>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "recomp/generated.hpp"
 #include "recomp/memory.hpp"
+#include "os.hpp"
 #include "recomp/runtime.hpp"
 #include "runtime_internal.hpp"
 #include "sha256.hpp"
@@ -32,12 +32,13 @@ struct Thunk {
 };
 
 std::mutex g_thunk_lock;
+// Never destroyed: game threads may still call imports while the process exits.
 std::vector<Thunk>& thunks() {
-    static std::vector<Thunk> v;
-    return v;
+    static auto* v = new std::vector<Thunk>;
+    return *v;
 }
 std::mutex g_import_lock;
-std::unordered_map<std::string, uint32_t> g_import_thunks;
+std::unordered_map<std::string, uint32_t>& g_import_thunks = *new std::unordered_map<std::string, uint32_t>;
 
 std::unordered_map<std::string, hle::HostFn>& import_registry() {
     static std::unordered_map<std::string, hle::HostFn> m;
@@ -282,7 +283,7 @@ static std::mutex g_stack_lock;
 static std::unordered_map<CPU*, uint32_t> g_stacks;  // guest stack of each CPU
 
 CPU* create_cpu(uint32_t stack_size) {
-    CPU* c = static_cast<CPU*>(std::aligned_alloc(64, (sizeof(CPU) + 63) & ~size_t(63)));
+    CPU* c = static_cast<CPU*>(::operator new(sizeof(CPU), std::align_val_t(64)));
     std::memset(c, 0, sizeof(CPU));
     stack_size = (stack_size + 4095) & ~4095u;
     const uint32_t stack = mem::alloc(stack_size, 4096);
@@ -310,7 +311,7 @@ void destroy_cpu(CPU* c) {
         }
     }
     mem::free(c->tls);
-    std::free(c);
+    ::operator delete(c, std::align_val_t(64));
 }
 
 // ------------------------------------------------------------------ CPU support for generated code
@@ -395,51 +396,40 @@ void dump_cpu(const CPU* c) {
     std::fprintf(stderr, "\n");
 }
 
-// Fatal signals: report the guest address and the host backtrace, whose
+// Fatal faults: report the guest address and the host backtrace, whose
 // fn_XXXXXXXX frames name the guest functions involved.
 namespace {
-void crash_handler(int sig, siginfo_t* info, void*) {
-    const uintptr_t a = reinterpret_cast<uintptr_t>(info->si_addr);
+void fault_report(const char* what, uintptr_t a) {
     const uintptr_t base = reinterpret_cast<uintptr_t>(g_mem);
     if (a >= base && a < base + (uintptr_t(1) << 32))
-        std::fprintf(stderr, "recomp: signal %d accessing guest address 0x%08x\n", sig, uint32_t(a - base));
+        std::fprintf(stderr, "recomp: %s accessing guest address 0x%08x\n", what, uint32_t(a - base));
     else
-        std::fprintf(stderr, "recomp: signal %d at host address %p\n", sig, info->si_addr);
+        std::fprintf(stderr, "recomp: %s at host address 0x%zx\n", what, size_t(a));
     if (CPU* c = current_cpu()) dump_cpu(c);
-    void* frames[64];
-    const int n = backtrace(frames, 64);
-    backtrace_symbols_fd(frames, n, 2);
-    signal(sig, SIG_DFL);
-    raise(sig);
+    os::print_backtrace();
 }
-// SIGUSR1 (request_thread_report): the same report for a thread that is still
-// running, e.g. one that hangs; it continues afterwards.
-void report_handler(int, siginfo_t*, void*) {
+// request_thread_report: the same report for a thread that is still running,
+// e.g. one that hangs; it continues afterwards.
+void thread_report() {
     std::fprintf(stderr, "recomp: thread report\n");
     if (CPU* c = current_cpu()) dump_cpu(c);
-    void* frames[64];
-    const int n = backtrace(frames, 64);
-    backtrace_symbols_fd(frames, n, 2);
+    os::print_backtrace();
 }
 }  // namespace
 
-void request_thread_report(pthread_t thread) { pthread_kill(thread, SIGUSR1); }
+void request_thread_report(pthread_t thread) {
+#ifdef _WIN32
+    (void)thread;
+    std::fprintf(stderr, "recomp: thread reports are not supported on Windows\n");
+#else
+    pthread_kill(thread, SIGUSR1);
+#endif
+}
 
 namespace internal {
 void install_crash_handler() {
-    static char alt[64 * 1024];
-    stack_t ss{};
-    ss.ss_sp = alt;
-    ss.ss_size = sizeof alt;
-    sigaltstack(&ss, nullptr);
-    struct sigaction sa{};
-    sa.sa_sigaction = crash_handler;
-    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
-    sigemptyset(&sa.sa_mask);
-    for (int sig : {SIGSEGV, SIGBUS, SIGILL, SIGFPE}) sigaction(sig, &sa, nullptr);
-    sa.sa_sigaction = report_handler;
-    sa.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESTART;
-    sigaction(SIGUSR1, &sa, nullptr);
+    os::install_fault_handler(fault_report);
+    os::install_thread_report(thread_report);
 }
 }  // namespace internal
 

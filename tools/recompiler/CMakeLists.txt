@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(CAPSTONE REQUIRED IMPORTED_TARGET capstone>=5)
-
 add_executable(abrecomp
     src/main.cpp
     src/elf_image.cpp
@@ -11,5 +8,7 @@ add_executable(abrecomp
     src/lifter_vfp.cpp
     src/emitter.cpp
 )
-target_link_libraries(abrecomp PRIVATE PkgConfig::CAPSTONE)
+target_link_libraries(abrecomp PRIVATE slingshot::capstone)
 target_compile_options(abrecomp PRIVATE -Wall -Wextra)
+# Host tools in one place (SLINGSHOT_HOST_TOOLS of a cross build).
+set_target_properties(abrecomp PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/host-tools")

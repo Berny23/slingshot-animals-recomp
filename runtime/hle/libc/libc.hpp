@@ -12,7 +12,7 @@ namespace recomp::hle {
 
 // Per-thread guest errno (returned by __errno()).
 uint32_t guest_errno_addr();
-void set_guest_errno(int e);
+void set_guest_errno(int e);  // a host errno value (stored as Linux's)
 
 // Guest address of the thunk for an import (for dlsym and function pointers).
 uint32_t internal_import_thunk(const char* name);

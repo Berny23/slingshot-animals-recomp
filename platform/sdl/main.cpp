@@ -5,8 +5,8 @@
 // Usage: slingshot-<game> [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods]
 //                         [--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>]
 //                         [--dump-scripts <dir>] [game-dir]
-//   game-dir holds lib/ and assets/ from the APK (default: where the build extracted it). The mods enabled are the
-//   build's default ones (SLINGSHOT_DEFAULT_MODS), or instead those given with
+//   game-dir holds lib/, assets/ and icon.png from the APK (default: game/ next to the executable, else where the
+//   build extracted it). The mods enabled are the build's default ones (SLINGSHOT_DEFAULT_MODS), or instead those given with
 //   --mod or SLINGSHOT_MODS=name,name ("all" for every mod); --no-mod takes one
 //   away, --no-mods all of them. --mod-option passes a setting to a mod (see
 //   README.md for each mod's). The device locale is --locale, else
@@ -14,10 +14,12 @@
 //   --dump-scripts writes the game's scripts and configs, decrypted, into <dir>
 //   and exits.
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -25,6 +27,7 @@
 
 #include "android_input.hpp"
 #include "font_provider.hpp"
+#include "font_scan.hpp"
 #include "mod.hpp"
 #include "recomp/fusion.hpp"
 #include "recomp/game.hpp"
@@ -102,23 +105,80 @@ struct NativeApp {
 
 void* gl_loader(const char* name) { return reinterpret_cast<void*>(SDL_GL_GetProcAddress(name)); }
 
+#ifdef __ANDROID__
+// The APK carries game/ (library, assets, icon) and game/files.txt, the list of its
+// files. The first start after an install or update copies them to internal storage,
+// where the runtime reads them like files on other systems.
+std::string android_game_dir() {
+    const std::string dir = std::string(SDL_GetAndroidInternalStoragePath()) + "/game";
+    size_t size = 0;
+    char* list = static_cast<char*>(SDL_LoadFile("game/files.txt", &size));
+    if (!list) return dir;
+    const std::string files(list, size);
+    SDL_free(list);
+    const std::string stamp = dir + "/files.txt";
+    if (char* old = static_cast<char*>(SDL_LoadFile(stamp.c_str(), &size))) {
+        const bool same = std::string(old, size) == files;
+        SDL_free(old);
+        if (same) return dir;
+    }
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::istringstream lines(files);
+    for (std::string name; std::getline(lines, name);) {
+        if (name.empty()) continue;
+        void* data = SDL_LoadFile(("game/" + name).c_str(), &size);
+        const std::filesystem::path out = std::filesystem::path(dir) / name;
+        std::filesystem::create_directories(out.parent_path(), ec);
+        if (!data || !SDL_SaveFile(out.string().c_str(), data, size)) {
+            std::fprintf(stderr, "host: cannot copy game/%s: %s\n", name.c_str(), SDL_GetError());
+            SDL_free(data);
+            return dir;
+        }
+        SDL_free(data);
+    }
+    SDL_SaveFile(stamp.c_str(), files.data(), files.size());  // last: marks a complete copy
+    return dir;
+}
+#endif
+
+// game/ next to the executable (in an installed game), else the build's directory.
+std::string default_game_dir() {
+#ifdef __ANDROID__
+    return android_game_dir();
+#endif
+    const std::string lib = std::string("/lib/lib") + recomp::game.library + ".so";
+    if (const char* base = SDL_GetBasePath()) {
+        const std::string dir = std::string(base) + "game";
+        std::error_code ec;
+        if (std::filesystem::exists(dir + lib, ec)) return dir;
+    }
+    return recomp::game.game_dir;
+}
+
 struct Options {
-    std::string game_dir = recomp::game.game_dir;
+    std::string game_dir = default_game_dir();
     std::vector<std::string> mods;
     std::string locale;
     std::string dump_dir;  // --dump-scripts
 };
 
-// The host's locale as POSIX resolves the message language.
+// The host's locale as POSIX resolves the message language, else the system's
+// first preferred language (Windows, macOS apps, Android).
 std::string host_locale() {
     for (const char* var : {"SLINGSHOT_LOCALE", "LC_ALL", "LC_MESSAGES", "LANG"})
         if (const char* v = std::getenv(var); v && *v) return v;
-    return "C";
+    int n = 0;
+    std::string locale = "C";
+    if (SDL_Locale** list = SDL_GetPreferredLocales(&n)) {
+        if (n > 0 && list[0]->language) {
+            locale = list[0]->language;
+            if (list[0]->country) locale += std::string("_") + list[0]->country;
+        }
+        SDL_free(list);
+    }
+    return locale;
 }
-
-#ifndef SLINGSHOT_DEFAULT_MODS
-#define SLINGSHOT_DEFAULT_MODS ""  // built without mods
-#endif
 
 // Appends the mods of a "name,name" list; "all" stands for every mod. With
 // `known_only`, names of mods this game does not have are skipped.
@@ -143,7 +203,7 @@ void list_mods() {
         return;
     }
     std::vector<std::string> defaults;
-    add_mods(SLINGSHOT_DEFAULT_MODS, defaults, true);
+    add_mods(recomp::game.default_mods, defaults, true);
     std::printf("Mods built into this executable (* = enabled by default):\n");
     for (const auto& m : mods) {
         bool on = false;
@@ -205,7 +265,7 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
             opt.game_dir = argv[i];
         }
     }
-    if (!any_chosen) add_mods(SLINGSHOT_DEFAULT_MODS, chosen, true);
+    if (!any_chosen) add_mods(recomp::game.default_mods, chosen, true);
     for (const std::string& r : removed) {
         bool known = false;
         for (const auto& info : slingshot::available_mods()) known |= r == info.name;
@@ -233,8 +293,18 @@ int main(int argc, char** argv) {
     std::vector<std::unique_ptr<slingshot::Mod>> mods;
     if (!slingshot::load_mods(opt.mods, mods)) return 1;
     recomp::vfs_set_asset_root(opt.game_dir + "/assets");
+#if !defined(__linux__) || defined(__ANDROID__)
+    // Saves: the system's place for app data (on Linux $XDG_DATA_HOME, the runtime's default).
+    if (char* pref = SDL_GetPrefPath(nullptr, "slingshot-animals-recomp")) {
+        recomp::vfs_set_root(std::string(pref) + recomp::game.id);
+        SDL_free(pref);
+    }
+#endif
     recomp::java::set_locale(recomp::java::parse_locale(opt.locale.empty() ? host_locale() : opt.locale));
 
+    // The identifier matches the installed slingshot-<id>.desktop (the taskbar icon on Wayland).
+    const std::string app_id = std::string("slingshot-") + recomp::game.id;
+    SDL_SetAppMetadata(recomp::game.title, recomp::game.version, app_id.c_str());
     // Mouse and touch are separate inputs: no synthetic events in either direction.
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
@@ -242,24 +312,46 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "host: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    SDL_Window* window = SDL_CreateWindow(recomp::game.title, 1280, 720,
-                                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-    if (!window) {
-        std::fprintf(stderr, "host: cannot create window: %s\n", SDL_GetError());
-        return 1;
+    // OpenGL ES 2.0 as on Android; desktop OpenGL 2.1 where there is none (macOS, some
+    // Windows drivers) or with SLINGSHOT_DESKTOP_GL=1.
+    bool desktop_gl = std::getenv("SLINGSHOT_DESKTOP_GL") != nullptr;
+    SDL_Window* window = nullptr;
+    SDL_GLContext gl = nullptr;
+    auto open_window = [&](bool desktop) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
+                            desktop ? SDL_GL_CONTEXT_PROFILE_COMPATIBILITY : SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, desktop ? 1 : 0);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+        window = SDL_CreateWindow(recomp::game.title, 1280, 720,
+                                  SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        if (window) gl = SDL_GL_CreateContext(window);
+        if (window && !gl) {
+            SDL_DestroyWindow(window);
+            window = nullptr;
+        }
+        return gl != nullptr;
+    };
+    if (!open_window(desktop_gl)) {
+#if !defined(__linux__)
+        std::fprintf(stderr, "host: no OpenGL ES 2 (%s), using desktop OpenGL\n", SDL_GetError());
+        desktop_gl = true;
+        SDL_GL_UnloadLibrary();
+        if (!open_window(true))
+#endif
+        {
+            std::fprintf(stderr, "host: cannot create an OpenGL window: %s\n", SDL_GetError());
+            return 1;
+        }
     }
-    SDL_GLContext gl = SDL_GL_CreateContext(window);
-    if (!gl) {
-        std::fprintf(stderr, "host: cannot create a GLES 2 context: %s\n", SDL_GetError());
-        return 1;
+    if (SDL_Surface* icon = SDL_LoadPNG((opt.game_dir + "/icon.png").c_str())) {
+        SDL_SetWindowIcon(window, icon);
+        SDL_DestroySurface(icon);
     }
     SDL_GL_SetSwapInterval(1);
     recomp::gles::set_loader(gl_loader);
+    recomp::gles::set_desktop_gl(desktop_gl);
     {
         recomp::java::Display d;
         SDL_GetWindowSizeInPixels(window, &d.width, &d.height);
@@ -269,7 +361,11 @@ int main(int argc, char** argv) {
 
     slingshot::SdlAudio audio;
     recomp::java::set_audio_backend(&audio);
+#if defined(__linux__) && !defined(__ANDROID__)
     slingshot::FontconfigProvider fonts;
+#else
+    slingshot::ScanFontProvider fonts;
+#endif
     recomp::java::set_font_provider(&fonts);
 
     if (!recomp::runtime_init(opt.game_dir + "/lib/lib" + recomp::game.library + ".so")) return 1;
@@ -330,8 +426,10 @@ int main(int argc, char** argv) {
             switch (e.type) {
                 case SDL_EVENT_QUIT: running = false; break;
                 case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: app.resize(e.window.data1, e.window.data2); break;
-                case SDL_EVENT_WINDOW_MINIMIZED: app.pause(); break;
-                case SDL_EVENT_WINDOW_RESTORED: app.resume(); break;
+                case SDL_EVENT_WINDOW_MINIMIZED:
+                case SDL_EVENT_WILL_ENTER_BACKGROUND: app.pause(); break;
+                case SDL_EVENT_WINDOW_RESTORED:
+                case SDL_EVENT_DID_ENTER_FOREGROUND: app.resume(); break;
                 default: sdl_input.handle(e); break;
             }
         }

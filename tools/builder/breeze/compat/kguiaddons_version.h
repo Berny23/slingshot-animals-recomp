@@ -1,0 +1,7 @@
+#pragma once
+#include <QtGlobal>
+#define KGUIADDONS_VERSION_STRING "6.32.0"
+#define KGUIADDONS_VERSION_MAJOR 6
+#define KGUIADDONS_VERSION_MINOR 32
+#define KGUIADDONS_VERSION_PATCH 0
+#define KGUIADDONS_VERSION ((6 << 16) | (32 << 8) | 0)

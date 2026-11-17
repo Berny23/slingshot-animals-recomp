@@ -8,6 +8,9 @@
 #include <SDL3/SDL_opengles2_gl2.h>
 
 #include <cstdio>
+#include <string>
+
+#include "recomp/gles.hpp"
 
 namespace slingshot {
 namespace {
@@ -130,7 +133,9 @@ void Overlay::render(int width, int height) {
     if (!program) {
         auto compile = [&](GLenum type, const char* src) {
             const GLuint s = gl.CreateShader(type);
-            gl.ShaderSource(s, 1, &src, nullptr);
+            const std::string text = recomp::gles::host_shader(src);
+            const char* p = text.c_str();
+            gl.ShaderSource(s, 1, &p, nullptr);
             gl.CompileShader(s);
             return s;
         };

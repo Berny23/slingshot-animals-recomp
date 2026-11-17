@@ -2,18 +2,17 @@
 // POSIX file and directory functions, and <stdio.h> streams.
 //
 // Guest file descriptors are host descriptors. Guest FILE* and DIR* are small
-// opaque guest allocations mapped to host objects.
-#include <dirent.h>
+// opaque guest allocations mapped to host objects. host.hpp hides what differs
+// between host systems.
 #include <fcntl.h>
-#include <fnmatch.h>
-#include <libgen.h>
-#include <poll.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/statfs.h>
-#include <sys/uio.h>
-#include <unistd.h>
 #include <utime.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <poll.h>
+#include <unistd.h>
+#endif
 
 #include <atomic>
 #include <cerrno>
@@ -25,6 +24,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "host.hpp"
 #include "libc.hpp"
 #include "recomp/game.hpp"
 #include "recomp/memory.hpp"
@@ -58,34 +58,26 @@ bool map_path(u32 guest, std::string& out) {
     return true;
 }
 
-// ARM open(2) flags differ from x86-64 for a few bits.
-int host_open_flags(u32 f) {
-    int h = int(f & (O_ACCMODE | O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC | O_APPEND | O_NONBLOCK | O_SYNC | O_CLOEXEC));
-    if (f & 040000) h |= O_DIRECTORY;
-    if (f & 0100000) h |= O_NOFOLLOW;
-    return h;
-}
-
 // bionic (ARM) struct stat: 104 bytes.
-void put_stat(u32 g, const struct stat& s) {
+void put_stat(u32 g, const host::Stat& s) {
     std::memset(g_mem + g, 0, 104);
-    st64(g + 0, uint64_t(s.st_dev));
-    st32(g + 12, u32(s.st_ino));
-    st32(g + 16, u32(s.st_mode));
-    st32(g + 20, u32(s.st_nlink));
+    st64(g + 0, s.dev);
+    st32(g + 12, u32(s.ino));
+    st32(g + 16, s.mode);
+    st32(g + 20, s.nlink);
     st32(g + 24, 10123);
     st32(g + 28, 10123);
-    st64(g + 32, uint64_t(s.st_rdev));
-    st64(g + 48, uint64_t(s.st_size));
-    st32(g + 56, u32(s.st_blksize));
-    st64(g + 64, uint64_t(s.st_blocks));
-    st32(g + 72, u32(s.st_atim.tv_sec));
-    st32(g + 76, u32(s.st_atim.tv_nsec));
-    st32(g + 80, u32(s.st_mtim.tv_sec));
-    st32(g + 84, u32(s.st_mtim.tv_nsec));
-    st32(g + 88, u32(s.st_ctim.tv_sec));
-    st32(g + 92, u32(s.st_ctim.tv_nsec));
-    st64(g + 96, uint64_t(s.st_ino));
+    st64(g + 32, s.rdev);
+    st64(g + 48, s.size);
+    st32(g + 56, s.blksize);
+    st64(g + 64, s.blocks);
+    st32(g + 72, u32(s.atime));
+    st32(g + 76, s.atime_ns);
+    st32(g + 80, u32(s.mtime));
+    st32(g + 84, s.mtime_ns);
+    st32(g + 88, u32(s.ctime));
+    st32(g + 92, s.ctime_ns);
+    st64(g + 96, s.ino);
 }
 
 // Android's alarm driver, which older devices have: the engine's clock reads the
@@ -95,16 +87,16 @@ std::atomic<int> g_alarm_fd{-1};
 // ------------------------------------------------------------------ fd level
 void h_open(CPU* c) {
     ArgReader a(c);
-    const u32 path = a.u32(), flags = a.u32(), mode = (flags & O_CREAT) ? a.u32() : 0;
+    const u32 path = a.u32(), flags = a.u32(), mode = (flags & 0100 /*O_CREAT*/) ? a.u32() : 0;
     if (!std::strcmp(str(path), "/dev/alarm")) {
-        const int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+        const int fd = host::open_null();
         if (fd >= 0) g_alarm_fd = fd;
         c->r[0] = u32(ret(fd));
         return;
     }
     std::string hp;
     if (!map_path(path, hp)) { c->r[0] = u32(-1); return; }
-    c->r[0] = u32(ret(::open(hp.c_str(), host_open_flags(flags), mode)));
+    c->r[0] = u32(ret(host::open(hp.c_str(), flags, mode)));
 }
 int h_close(int fd) {
     if (fd <= 2) return 0;
@@ -125,12 +117,12 @@ int h_writev(int fd, u32 iov, int n) {
     return total;
 }
 int h_lseek(int fd, int off, int whence) { return ret(int(::lseek(fd, off, whence))); }
-int h_fsync(int fd) { return ret(::fsync(fd)); }
-int h_ftruncate(int fd, int len) { return ret(::ftruncate(fd, len)); }
+int h_fsync(int fd) { return ret(host::fsync(fd)); }
+int h_ftruncate(int fd, int len) { return ret(host::truncate(fd, len)); }
 int h_dup(int fd) { return ret(::dup(fd)); }
 int h_pipe(u32 fds) {
     int f[2];
-    if (::pipe(f) < 0) return ret(-1);
+    if (host::pipe(f) < 0) return ret(-1);
     st32(fds, u32(f[0]));
     st32(fds + 4, u32(f[1]));
     return 0;
@@ -140,31 +132,29 @@ void h_fcntl(CPU* c) {
     const int fd = int(a.u32()), cmd = int(a.u32());
     const u32 arg = a.u32();
     int r;
+    // Linux fcntl commands; flag changes and locks are accepted and ignored.
     switch (cmd) {
-        case F_GETFL: {
-            r = ::fcntl(fd, F_GETFL);
-            break;
-        }
-        case F_SETFL: r = ::fcntl(fd, F_SETFL, host_open_flags(arg)); break;
-        case F_GETFD: case F_SETFD: case F_DUPFD: r = ::fcntl(fd, cmd, int(arg)); break;
-        default: r = 0; break;  // locks etc.: pretend success
+        case 3: /*F_GETFL*/ r = int(host::fd_flags(fd)); break;
+        case 0: /*F_DUPFD*/ r = ::dup(fd); break;
+        case 1: /*F_GETFD*/ r = host::valid_fd(fd) ? 1 /*FD_CLOEXEC*/ : -1; break;
+        default: r = host::valid_fd(fd) ? 0 : -1; break;
     }
+    if (r < 0) errno = EBADF;
+    (void)arg;
     c->r[0] = u32(ret(r));
 }
 void h_ioctl(CPU* c) {
     ArgReader a(c);
     const int fd = int(a.u32());
     const u32 request = a.u32(), arg = a.u32();
-    if (::fcntl(fd, F_GETFD) < 0) {
+    if (!host::valid_fd(fd)) {
         c->r[0] = u32(fail(EBADF));
         return;
     }
     // ANDROID_ALARM_GET_TIME(type) = _IOW('a', 4 | type << 4, struct timespec)
     if (fd == g_alarm_fd && (request & ~0xf0u) == 0x40086104u) {
         const u32 type = (request >> 4) & 0xf;
-        const clockid_t id = type <= 1 ? CLOCK_REALTIME : type <= 3 ? CLOCK_BOOTTIME : CLOCK_MONOTONIC;
-        timespec ts{};
-        ::clock_gettime(id, &ts);
+        const timespec ts = host::clock(type <= 1 ? 0 /*CLOCK_REALTIME*/ : 7 /*CLOCK_BOOTTIME*/);
         st32(arg, u32(ts.tv_sec));
         st32(arg + 4, u32(ts.tv_nsec));
         c->r[0] = 0;
@@ -173,6 +163,12 @@ void h_ioctl(CPU* c) {
     c->r[0] = u32(fail(ENOTTY));
 }
 int h_poll(u32 fds, u32 n, int timeout) {
+#ifdef _WIN32
+    // Files and pipes are always ready.
+    (void)timeout;
+    for (u32 i = 0; i < n; ++i) st16(fds + 8 * i + 6, ld16(fds + 8 * i + 4));
+    return int(n);
+#else
     std::vector<pollfd> p(n);
     for (u32 i = 0; i < n; ++i) {
         p[i].fd = int(ld32(fds + 8 * i));
@@ -181,30 +177,31 @@ int h_poll(u32 fds, u32 n, int timeout) {
     const int r = ::poll(p.data(), n, timeout);
     for (u32 i = 0; i < n; ++i) st16(fds + 8 * i + 6, u32(uint16_t(p[i].revents)));
     return ret(r);
+#endif
 }
 int h_fstat(int fd, u32 out) {
-    struct stat s;
-    if (::fstat(fd, &s) < 0) return ret(-1);
+    host::Stat s;
+    if (!host::fstat(fd, s)) return ret(-1);
     put_stat(out, s);
     return 0;
 }
 int h_stat(u32 path, u32 out) {
     std::string hp;
     if (!map_path(path, hp)) return -1;
-    struct stat s;
-    if (::stat(hp.c_str(), &s) < 0) return ret(-1);
+    host::Stat s;
+    if (!host::stat(hp.c_str(), s)) return ret(-1);
     put_stat(out, s);
     return 0;
 }
 int h_access(u32 path, int mode) {
     std::string hp;
     if (!map_path(path, hp)) return -1;
-    return ret(::access(hp.c_str(), mode));
+    return ret(host::access(hp.c_str(), mode));
 }
 int h_mkdir(u32 path, u32 mode) {
     std::string hp;
     if (!map_path(path, hp)) return -1;
-    return ret(::mkdir(hp.c_str(), mode));
+    return ret(host::mkdir(hp.c_str(), mode));
 }
 int h_rmdir(u32 path) {
     std::string hp;
@@ -241,18 +238,18 @@ int h_utime(u32 path, u32 times) {
 int h_statfs(u32 path, u32 out) {
     std::string hp;
     if (!map_path(path, hp)) return -1;
-    struct statfs s;
-    if (::statfs(hp.c_str(), &s) < 0) return ret(-1);
+    host::DiskSpace s;
+    if (!host::statfs(hp.c_str(), s)) return ret(-1);
     std::memset(g_mem + out, 0, 84);
-    st32(out + 0, u32(s.f_type));
-    st32(out + 4, u32(s.f_bsize));
-    st64(out + 8, s.f_blocks);
-    st64(out + 16, s.f_bfree);
-    st64(out + 24, s.f_bavail);
-    st64(out + 32, s.f_files);
-    st64(out + 40, s.f_ffree);
+    st32(out + 0, s.type);
+    st32(out + 4, s.bsize);
+    st64(out + 8, s.blocks);
+    st64(out + 16, s.bfree);
+    st64(out + 24, s.bavail);
+    st64(out + 32, s.files);
+    st64(out + 40, s.ffree);
     st32(out + 56, 255);
-    st32(out + 60, u32(s.f_frsize));
+    st32(out + 60, s.bsize);
     return 0;
 }
 int h_pathconf(u32, int) { return 255; }
@@ -268,7 +265,7 @@ u32 h_getcwd(u32 buf, u32 n) {
 int h_mkstemp(u32 tmpl) {
     std::string hp;
     if (!map_path(tmpl, hp)) return -1;
-    const int fd = ::mkstemp(hp.data());
+    const int fd = host::mkstemp(hp);
     if (fd >= 0) {
         // Write the chosen name back (same suffix length).
         const size_t n = std::strlen(str(tmpl));
@@ -279,11 +276,15 @@ int h_mkstemp(u32 tmpl) {
 u32 h_basename(u32 path) {
     static thread_local u32 buf = 0;
     if (!buf) buf = mem::alloc(4096);
-    std::string s = str(path);
-    std::snprintf(str(buf), 4096, "%s", ::basename(s.data()));
+    // POSIX basename: the last component, trailing slashes ignored.
+    std::string s = path ? str(path) : "";
+    while (s.size() > 1 && s.back() == '/') s.pop_back();
+    if (s.empty()) s = ".";
+    else if (s != "/") s = s.substr(s.find_last_of('/') + 1);
+    std::snprintf(str(buf), 4096, "%s", s.c_str());
     return buf;
 }
-int h_fnmatch(u32 pat, u32 s, int flags) { return ::fnmatch(str(pat), str(s), flags); }
+int h_fnmatch(u32 pat, u32 s, int flags) { return host::fnmatch(str(pat), str(s), flags); }
 
 // mmap: anonymous or private file mappings become guest heap copies.
 u32 h_mmap(u32 addr, u32 len, int prot, int flags, int fd, int off) {
@@ -292,7 +293,7 @@ u32 h_mmap(u32 addr, u32 len, int prot, int flags, int fd, int off) {
     if (!a) return u32(fail(ENOMEM));
     std::memset(g_mem + a, 0, len);
     if (!(flags & 0x20 /*MAP_ANONYMOUS*/) && fd >= 0) {
-        if (::pread(fd, g_mem + a, len, off) < 0) {
+        if (host::pread(fd, g_mem + a, len, uint32_t(off)) < 0) {
             mem::free(a);
             return u32(ret(-1));
         }
@@ -307,12 +308,12 @@ int h_munmap(u32 addr, u32) {
 // ------------------------------------------------------------------ directories
 constexpr u32 kDirentSize = 280;
 std::mutex g_dir_lock;
-std::unordered_map<u32, DIR*> g_dirs;
+std::unordered_map<u32, host::Dir*> g_dirs;
 
 u32 h_opendir(u32 path) {
     std::string hp;
     if (!map_path(path, hp)) return 0;
-    DIR* d = ::opendir(hp.c_str());
+    host::Dir* d = host::opendir(hp.c_str());
     if (!d) {
         set_guest_errno(errno);
         return 0;
@@ -326,32 +327,30 @@ int h_closedir(u32 h) {
     std::lock_guard lk(g_dir_lock);
     auto it = g_dirs.find(h);
     if (it == g_dirs.end()) return fail(EBADF);
-    ::closedir(it->second);
+    host::closedir(it->second);
     g_dirs.erase(it);
     mem::free(h);
     return 0;
 }
 int h_readdir_r(u32 h, u32 entry, u32 result) {
-    DIR* d;
+    host::Dir* d;
     {
         std::lock_guard lk(g_dir_lock);
         auto it = g_dirs.find(h);
         if (it == g_dirs.end()) return EBADF;
         d = it->second;
     }
-    errno = 0;
-    dirent* e = ::readdir(d);
-    if (!e) {
+    host::DirEntry e;
+    if (!host::readdir(d, e)) {
         st32(result, 0);
-        return errno;
+        return host::linux_errno(errno);
     }
     // bionic struct dirent: u64 d_ino, s64 d_off, u16 d_reclen, u8 d_type, char d_name[256]
     std::memset(g_mem + entry, 0, kDirentSize);
-    st64(entry, e->d_ino);
-    st64(entry + 8, uint64_t(e->d_off));
+    st64(entry, e.ino);
     st16(entry + 16, kDirentSize);
-    st8(entry + 18, e->d_type);
-    std::snprintf(str(entry + 19), 256, "%s", e->d_name);
+    st8(entry + 18, e.type);
+    std::snprintf(str(entry + 19), 256, "%s", e.name.c_str());
     st32(result, entry);
     return 0;
 }
@@ -407,29 +406,23 @@ FILE* open_virtual(u32 path, u32 mode) {
     if (!path || !mode || str(mode)[0] != 'r') return nullptr;
     auto text = vfs_read_virtual_file(str(path));
     if (!text) return nullptr;
-    FILE* f = ::fmemopen(nullptr, text->size() + 1, "w+");  // the buffer goes with fclose
-    if (!f) return nullptr;
-    std::fwrite(text->data(), 1, text->size(), f);
-    std::fflush(f);
-    // fmemopen's size is the buffer's: reads end at the contents' end.
-    std::rewind(f);
-    return f;
+    return host::memory_stream(*text);
 }
 
 u32 h_fopen(u32 path, u32 mode) {
     if (FILE* v = open_virtual(path, mode)) return wrap_file(v);
     std::string hp;
     if (!map_path(path, hp)) return 0;
-    FILE* f = std::fopen(hp.c_str(), str(mode));
+    FILE* f = std::fopen(hp.c_str(), host::file_mode(str(mode)).c_str());
     if (!f) set_guest_errno(errno);
     return wrap_file(f);
 }
-u32 h_fdopen(int fd, u32 mode) { return wrap_file(::fdopen(fd, str(mode))); }
+u32 h_fdopen(int fd, u32 mode) { return wrap_file(::fdopen(fd, host::file_mode(str(mode)).c_str())); }
 u32 h_freopen(u32 path, u32 mode, u32 f) {
     FILE* hf = host_file(f);
     std::string hp;
     if (!hf || !map_path(path, hp)) return 0;
-    FILE* nf = std::freopen(hp.c_str(), str(mode), hf);
+    FILE* nf = std::freopen(hp.c_str(), host::file_mode(str(mode)).c_str(), hf);
     if (nf) fill_guest_file(f, nf);
     std::lock_guard lk(g_file_lock);
     g_files[f] = nf;
@@ -453,9 +446,9 @@ int h_fclose(u32 f) {
 u32 h_fread(u32 buf, u32 sz, u32 n, u32 f) { FILE_OR(f, 0) return u32(std::fread(g_mem + buf, sz, n, hf)); }
 u32 h_fwrite(u32 buf, u32 sz, u32 n, u32 f) { FILE_OR(f, 0) return u32(std::fwrite(g_mem + buf, sz, n, hf)); }
 int h_fseek(u32 f, int off, int whence) { FILE_OR(f, -1) return std::fseek(hf, off, whence); }
-int h_fseeko(u32 f, int off, int whence) { FILE_OR(f, -1) return ::fseeko(hf, off, whence); }
+int h_fseeko(u32 f, int off, int whence) { FILE_OR(f, -1) return host::seek(hf, off, whence); }
 int h_ftell(u32 f) { FILE_OR(f, -1) return int(std::ftell(hf)); }
-int h_ftello(u32 f) { FILE_OR(f, -1) return int(::ftello(hf)); }
+int h_ftello(u32 f) { FILE_OR(f, -1) return int(host::ftell(hf)); }
 int h_fflush(u32 f) {
     if (!f) return std::fflush(nullptr);
     FILE_OR(f, -1) return std::fflush(hf);

@@ -6,8 +6,6 @@
 # shared by mods.
 # Which mods start enabled is SLINGSHOT_DEFAULT_MODS (all by default);
 # --mod, --no-mod and SLINGSHOT_MODS change that at run time.
-find_package(SDL3 REQUIRED CONFIG)
-
 file(GLOB game_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/games/*/game.json")
 set(game_ids "")
 foreach(f IN LISTS game_files)
@@ -47,5 +45,4 @@ function(slingshot_add_mods target id)
     endforeach()
     target_sources(${target} PRIVATE ${sources})
     target_include_directories(${target} PRIVATE "${CMAKE_SOURCE_DIR}/mods")
-    target_compile_definitions(${target} PRIVATE "SLINGSHOT_DEFAULT_MODS=\"${SLINGSHOT_DEFAULT_MODS_LIST}\"")
 endfunction()

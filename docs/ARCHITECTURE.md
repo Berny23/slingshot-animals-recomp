@@ -37,7 +37,7 @@ The ARMv7 build is recompiled rather than the x86 one: fixed-width instructions,
 ## 2. Pipeline
 
 ```
-APK ──► tools/scripts/extract_apk.py ──► build/games/<id>/{lib,assets}
+APK ──► tools/apk (slingshot-apk extract) ──► build/games/<id>/{lib,assets,icon}
                          │
                          ▼
           tools/recompiler (abrecomp, capstone)
@@ -51,7 +51,7 @@ APK ──► tools/scripts/extract_apk.py ──► build/games/<id>/{lib,asset
 ```
 
 ### 2.1 Games
-`games/<id>/game.json` describes a supported build; `extract_apk.py` matches an APK by its library and checks its SHA-256. `games/CMakeLists.txt` builds one executable per extracted game and generates `recomp::game` (`runtime/core/include/recomp/game.hpp`) from the file:
+`games/<id>/game.json` describes a supported build; CMake matches an APK by its library and checks its SHA-256, `slingshot-apk extract` unpacks the library, `assets/` and the app icon at build time. `games/CMakeLists.txt` builds one executable per extracted game and generates `recomp::game` (`runtime/core/include/recomp/game.hpp`) from the file:
 
 | Field | Content |
 |---|---|
@@ -84,8 +84,9 @@ Each import resolves to a thunk address that `dispatch` routes to a host impleme
 - libc: strings and math call the host. Files, directories and pthreads (host threads with their own context and guest stack) are emulated, sockets always fail, `setjmp`/`longjmp` are handled by the recompiler.
 - A thread that joins itself is detached instead of failing with `EDEADLK`: the game's network worker does that when its callback destroys its owner, and libstdc++ would throw.
 - Calls the library makes to its own exports through the PLT go straight to its definitions. PLT stubs are decoded only inside the code segment.
-- Paths below `/data/data/<package>` map to `$XDG_DATA_HOME/slingshot-animals-recomp/<id>/`; other paths are invisible.
-- GLES2 calls go to the host's GLES2 context (SDL). Client-side vertex arrays are read from guest memory.
+- Paths below `/data/data/<package>` map to `$XDG_DATA_HOME/slingshot-animals-recomp/<id>/` (elsewhere SDL's preference folder); other paths are invisible.
+- Host differences sit in two layers: `runtime/core/src/os.*` (address space reservation, commit, fault handlers) and `runtime/hle/libc/host.*` (files, clocks, errno and flag numbers as on Linux ARM).
+- GLES2 calls go to the host's GLES2 context (SDL). Client-side vertex arrays are read from guest memory. Without OpenGL ES (macOS, some Windows drivers) a desktop OpenGL 2.1 context is used: shaders get `#version 120`, ETC1 textures are decoded on the CPU.
 - `AAssetManager` reads the extracted `assets/`. `recomp::vfs_add_asset_patch` changes files as they are opened; `recomp::vfs_add_virtual_file` serves files whose content a host callback makes on each open; `recomp::vfs_add_virtual_fallback` serves a mapped path that has no host file.
 
 ### 3.4 JNI and Java
@@ -111,7 +112,7 @@ Each import resolves to a thunk address that `dispatch` routes to a host impleme
 - Metrics of the primary font, shaping per font run, fallback fonts for missing characters.
 - Whole-pixel glyph origins, synthetic bold and italic, a miter-joined outline, unpremultiplied output.
 
-fontconfig finds the fonts (`platform/sdl/font_provider.*`) and prefers Roboto and Noto when installed.
+fontconfig finds the fonts on Linux (`platform/sdl/font_provider.*`), elsewhere the font folders are scanned with FreeType (`platform/sdl/font_scan.*`); both prefer Roboto and Noto when installed.
 
 ### 3.8 C++ exceptions
 The guest's own unwinder (`__cxa_throw` → `_Unwind_RaiseException`) is recompiled like any code. Only its last step, libgcc's `restore_core_regs` or LLVM libunwind's `Registers_arm::restoreCoreAndJumpTo` (found by its code when the symbol is hidden), is replaced: it throws a host exception with the target `pc` and `sp`. Functions with landing pads catch it, check that the target is in their frame and jump to the pad. Functions without landing pads have no overhead.
@@ -200,11 +201,18 @@ Most mods patch scripts with `append_lua(script, code)` (`mods/common/game_scrip
 
 ```
 tools/recompiler/   ELF and exidx parsing, analysis, C++ emitter
-tools/scripts/      APK extraction, DEX inspection
+tools/apk/          APK reading (identify, extract, icons) and Android packaging
+tools/builder/      Slingshot Builder, the Qt app that builds and installs a game
+  breeze/           KDE's Breeze style built in, with stand-ins for the KDE Frameworks parts it uses
+  launcher/         Windows single-file release: unpacks the appended builder folder once per version
+tools/scripts/      DEX inspection
 runtime/core/       memory, CPU context, dispatch, loader, threads, unwinding
 runtime/hle/        libc, GLES2, Android (assets, log, properties), engine hooks
 runtime/jni/        fake JNIEnv and Java classes
 platform/sdl/       window, input, audio, fonts, mod API, main loop
+platform/windows/   executable resources (icon, version, UTF-8 code page)
+platform/android/   manifest and APK packaging
+cmake/              dependencies (pinned sources), cross toolchains
 mods/               optional features, one directory each
 games/              game.json per game, build rules for the generated code
 ```

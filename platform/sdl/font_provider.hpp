@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// System fonts for SystemFontRenderer, found with fontconfig.
+// System fonts for SystemFontRenderer, found with fontconfig (loaded at run time).
 #pragma once
 
 #include "recomp/java.hpp"

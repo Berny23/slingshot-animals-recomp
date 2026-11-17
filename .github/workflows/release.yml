@@ -1,0 +1,153 @@
+# Builds Slingshot Builder for Linux, Windows and macOS when a version tag
+# (v1.0.0, ...) is pushed, and attaches the packages to the GitHub release.
+# Each package carries the repository sources (source/) the games are built from.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  QT_VERSION: "6.8.3"
+
+jobs:
+  builder:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            package: linux-x86_64
+          - os: windows-2022
+            package: windows-x86_64
+          - os: macos-14
+            package: macos-universal
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Qt (Linux, macOS)
+        if: runner.os != 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Qt (Windows, MinGW)
+        if: runner.os == 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_mingw
+          tools: tools_mingw1310
+          cache: true
+
+      - name: Build tools
+        run: |
+          case "$RUNNER_OS" in
+            Linux)
+              sudo apt-get update
+              sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 \
+                libxcb-cursor0 libfuse2 file \
+                libasound2-dev libpulse-dev libpipewire-0.3-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+                libxfixes-dev libxi-dev libxss-dev libxtst-dev libdrm-dev libgbm-dev libegl1-mesa-dev \
+                libgles2-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libwayland-dev wayland-protocols \
+                libdecor-0-dev ;;
+            macOS) brew install ninja ;;
+            Windows)
+              choco install -y ninja
+              echo "$RUNNER_WORKSPACE/Qt/Tools/mingw1310_64/bin" >> "$GITHUB_PATH" ;;
+          esac
+
+      - name: Configure
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = macOS ]; then
+            extra+=(-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0)
+          fi
+          if [ "$RUNNER_OS" = Windows ]; then
+            extra+=(-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++)
+          fi
+          cmake -S tools/builder -B out -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSLINGSHOT_VERSION="${GITHUB_REF_NAME}" "${extra[@]}"
+
+      - name: Build
+        run: cmake --build out
+
+      - name: Sources for the package
+        run: |
+          mkdir -p sources
+          git archive --format=tar HEAD | tar -x -C sources
+          rm -rf sources/.github
+
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          # Native Wayland, and the desktop portal for the system's file dialogs
+          EXTRA_PLATFORM_PLUGINS: "libqwayland-egl.so;libqwayland-generic.so"
+          DEPLOY_PLATFORM_THEMES: "1"
+        run: |
+          base=https://github.com/linuxdeploy
+          curl -fsSLo linuxdeploy $base/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSLo linuxdeploy-plugin-qt $base/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy linuxdeploy-plugin-qt
+          mkdir -p AppDir/usr/share/slingshot-builder
+          cp -r sources AppDir/usr/share/slingshot-builder/source
+          # SDL3 with every backend, for game builds without development packages
+          cmake -S platform/linux/sdl3 -B sdl3-build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build sdl3-build
+          cmake --install sdl3-build --prefix AppDir/usr/share/slingshot-builder/sdl3
+          cp tools/builder/resources/builder.svg slingshot-builder.svg
+          export QMAKE="$QT_ROOT_DIR/bin/qmake" OUTPUT="slingshot-builder-${{ matrix.package }}.AppImage"
+          ./linuxdeploy --appdir AppDir --executable out/slingshot-builder \
+            --desktop-file tools/builder/resources/slingshot-builder.desktop --icon-file slingshot-builder.svg \
+            --plugin qt --output appimage
+          mkdir dist && mv "$OUTPUT" dist/
+
+      - name: Package (Windows exe)
+        if: runner.os == 'Windows'
+        run: |
+          dir="Slingshot Builder"
+          mkdir "$dir"
+          cp out/slingshot-builder.exe "$dir/"
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw "$dir/slingshot-builder.exe"
+          cp -r sources "$dir/source"
+          # One file: the launcher with the folder appended as a zip
+          7z a -tzip -mm=Deflate -mx=9 builder.zip "$dir"
+          mkdir dist
+          cat out/slingshot-builder-launcher.exe builder.zip > "dist/slingshot-builder-${{ matrix.package }}.exe"
+
+      - name: Package (macOS app)
+        if: runner.os == 'macOS'
+        run: |
+          app="out/Slingshot Builder.app"
+          macdeployqt "$app"
+          cp -R sources "$app/Contents/Resources/source"
+          codesign --force --deep --sign - "$app"
+          mkdir dist
+          ditto -c -k --keepParent "$app" "dist/slingshot-builder-${{ matrix.package }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: dist/*
+
+  release:
+    needs: builder
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

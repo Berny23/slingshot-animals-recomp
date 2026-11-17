@@ -6,7 +6,7 @@
 // One command per line, "<frame> <command> [args]"; '#' starts a comment.
 // Positions are window coordinates.
 //
-// Live control: with SLINGSHOT_CONTROL=<fifo> (created if missing) the game
+// Live control (not on Windows): with SLINGSHOT_CONTROL=<fifo> (created if missing) the game
 // also takes commands while it runs, written to that named pipe, e.g.
 // `echo "shot /tmp/a.bmp" > fifo`. A line "<command> [args]" runs on the next
 // frame, "+<n> <command> [args]" n frames later (so "+0 mouse down 10 10",

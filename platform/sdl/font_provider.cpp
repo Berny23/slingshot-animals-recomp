@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "font_provider.hpp"
 
-#include <fontconfig/fontconfig.h>
+#include "fontconfig_dl.hpp"
 
 #include <memory>
 
@@ -61,6 +61,7 @@ Pattern match(FcPattern* p) {
 }  // namespace
 
 std::optional<FontFile> FontconfigProvider::typeface(const FontRequest& request) {
+    if (!fontconfig().loaded) return std::nullopt;
     const char* android = android_font(request.family);
     Pattern p = request_pattern(request, android);
     if (Pattern font = match(p.get()); font && family_is(font.get(), android)) return font_file(font.get());
@@ -70,6 +71,7 @@ std::optional<FontFile> FontconfigProvider::typeface(const FontRequest& request)
 }
 
 std::optional<FontFile> FontconfigProvider::fallback(const FontRequest& request, char32_t cp) {
+    if (!fontconfig().loaded) return std::nullopt;
     Pattern p = request_pattern(request, request.family.c_str());
     FcConfigSubstitute(nullptr, p.get(), FcMatchPattern);
     FcDefaultSubstitute(p.get());

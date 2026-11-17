@@ -1,0 +1,7 @@
+#pragma once
+// Untranslated text: the builder is English only.
+#include <QString>
+template<typename... Args>
+inline QString i18n(const char* text, Args&&...) { return QString::fromUtf8(text); }
+template<typename... Args>
+inline QString i18nc(const char*, const char* text, Args&&...) { return QString::fromUtf8(text); }

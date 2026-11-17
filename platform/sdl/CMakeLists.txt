@@ -1,19 +1,24 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Desktop host (SDL3). main.cpp is built into each game's executable (games/).
-find_package(SDL3 REQUIRED CONFIG)
-find_package(Fontconfig REQUIRED)
 
 add_library(slingshot_host OBJECT
     android_input.cpp
     sdl_input.cpp
     sdl_audio.cpp
-    font_provider.cpp
     mod.cpp
     overlay.cpp
     test_script.cpp
     watchdog.cpp)
 target_include_directories(slingshot_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(slingshot_host PUBLIC recomp_runtime SDL3::SDL3 Fontconfig::Fontconfig)
+target_link_libraries(slingshot_host PUBLIC recomp_runtime slingshot::SDL3)
+# System fonts: fontconfig on Linux, the font folders elsewhere.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(slingshot_host PRIVATE font_provider.cpp)
+    target_link_libraries(slingshot_host PUBLIC ${CMAKE_DL_LIBS})
+else()
+    target_sources(slingshot_host PRIVATE font_scan.cpp)
+    target_link_libraries(slingshot_host PRIVATE slingshot::freetype)
+endif()
 
 # The mods that start enabled, as "name,name" ("all" for every one).
 # A mod's name is its directory's with "-" for "_".

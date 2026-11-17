@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "recomp/memory.hpp"
 
-#include <sys/mman.h>
-
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <mutex>
 #include <vector>
+
+#include "os.hpp"
 
 namespace recomp {
 uint8_t* g_mem = nullptr;
@@ -71,7 +72,7 @@ void insert_run(uint32_t start, uint32_t pages) {
     g_free_by_size.emplace(pages, start);
 }
 
-uint32_t alloc_pages(uint32_t pages) {
+uint32_t find_pages(uint32_t pages) {
     auto it = g_free_by_size.lower_bound(pages);
     if (it != g_free_by_size.end()) {
         const uint32_t start = it->second, have = it->first;
@@ -80,6 +81,12 @@ uint32_t alloc_pages(uint32_t pages) {
         return start;
     }
     return bump_pages(pages);
+}
+
+uint32_t alloc_pages(uint32_t pages) {
+    const uint32_t a = find_pages(pages);
+    if (a && !os::commit(g_mem + a, size_t(pages) * kPage)) return 0;
+    return a;
 }
 
 uint32_t alloc_small_locked(unsigned cls) {
@@ -116,17 +123,11 @@ uint32_t alloc_large_locked(uint32_t size) {
 
 bool init() {
     const size_t size = (size_t(1) << 32) + 2 * kPage;  // + guard for accesses straddling 4 GiB
-    void* p = mmap(nullptr, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    if (p == MAP_FAILED) {
-        std::perror("recomp: reserving guest address space");
+    // Everything except the null page is read/write; the heap is committed as it grows.
+    g_mem = os::reserve_arena(size, kNullPageEnd, size_t(1) << 32);
+    if (!g_mem || !os::commit(g_mem + kNullPageEnd, kHeapBase - kNullPageEnd) ||
+        !os::commit(g_mem + kHeapEnd, (size_t(1) << 32) - kHeapEnd))
         return false;
-    }
-    g_mem = static_cast<uint8_t*>(p);
-    // Everything except the null page is read/write; pages are committed lazily by the OS.
-    if (mprotect(g_mem + kNullPageEnd, (size_t(1) << 32) - kNullPageEnd, PROT_READ | PROT_WRITE) != 0) {
-        std::perror("recomp: mprotect");
-        return false;
-    }
     g_page_class.assign((kHeapEnd - kHeapBase) / kPage, kUnused);
     return true;
 }
@@ -184,7 +185,7 @@ void free(uint32_t a) {
         g_large.erase(it);
         for (uint32_t p = 0; p < pages; ++p) g_page_class[page_index(a) + p] = kUnused;
         // Give the memory back to the OS; the range stays reserved.
-        madvise(g_mem + a, size_t(pages) * kPage, MADV_DONTNEED);
+        os::discard(g_mem + a, size_t(pages) * kPage);
         insert_run(a, pages);
         return;
     }

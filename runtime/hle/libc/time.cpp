@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // <time.h> and <sys/time.h>. Guest time_t and long are 32-bit.
-#include <sys/time.h>
-
 #include <cstring>
 #include <ctime>
 
+#include "host.hpp"
 #include "libc.hpp"
 #include "recomp/memory.hpp"
 
@@ -13,11 +12,37 @@ namespace {
 
 using u32 = uint32_t;
 
+// UTC offset of a broken-down local time in seconds.
+long gmt_offset(const std::tm& t) {
+#ifdef _WIN32
+    std::tm copy = t;
+    const time_t local = _mkgmtime(&copy);  // the fields read as UTC
+    copy = t;
+    return long(local - std::mktime(&copy));
+#else
+    return t.tm_gmtoff;
+#endif
+}
+bool gmtime(time_t t, std::tm& out) {
+#ifdef _WIN32
+    return ::gmtime_s(&out, &t) == 0;
+#else
+    return ::gmtime_r(&t, &out) != nullptr;
+#endif
+}
+bool localtime(time_t t, std::tm& out) {
+#ifdef _WIN32
+    return ::localtime_s(&out, &t) == 0;
+#else
+    return ::localtime_r(&t, &out) != nullptr;
+#endif
+}
+
 // bionic struct tm: 9 ints, long tm_gmtoff, const char* tm_zone (44 bytes)
 void put_tm(u32 g, const std::tm& t) {
     const int f[9] = {t.tm_sec, t.tm_min, t.tm_hour, t.tm_mday, t.tm_mon, t.tm_year, t.tm_wday, t.tm_yday, t.tm_isdst};
     for (int i = 0; i < 9; ++i) st32(g + 4 * u32(i), u32(f[i]));
-    st32(g + 36, u32(t.tm_gmtoff));
+    st32(g + 36, u32(gmt_offset(t)));
     static u32 utc = mem::static_string("UTC");
     st32(g + 40, utc);
 }
@@ -42,20 +67,16 @@ u32 h_time(u32 out) {
 }
 u32 h_clock() { return u32(std::clock()); }
 int h_clock_gettime(int id, u32 ts) {
-    timespec t{};
-    const int r = ::clock_gettime(clockid_t(id), &t);
-    if (r == 0) {
-        st32(ts, u32(t.tv_sec));
-        st32(ts + 4, u32(t.tv_nsec));
-    }
-    return r;
+    const timespec t = host::clock(id);
+    st32(ts, u32(t.tv_sec));
+    st32(ts + 4, u32(t.tv_nsec));
+    return 0;
 }
 int h_gettimeofday(u32 tv, u32 tz) {
-    timeval t{};
-    ::gettimeofday(&t, nullptr);
+    const timespec t = host::clock(0);
     if (tv) {
         st32(tv, u32(t.tv_sec));
-        st32(tv + 4, u32(t.tv_usec));
+        st32(tv + 4, u32(t.tv_nsec / 1000));
     }
     if (tz) {
         st32(tz, 0);
@@ -71,14 +92,14 @@ u32 tm_buffer() {
 u32 h_gmtime_r(u32 tp, u32 out) {
     const time_t t = int32_t(ld32(tp));
     std::tm r{};
-    ::gmtime_r(&t, &r);
+    gmtime(t, r);
     put_tm(out, r);
     return out;
 }
 u32 h_localtime_r(u32 tp, u32 out) {
     const time_t t = int32_t(ld32(tp));
     std::tm r{};
-    ::localtime_r(&t, &r);
+    localtime(t, r);
     put_tm(out, r);
     return out;
 }

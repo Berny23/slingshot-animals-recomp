@@ -81,7 +81,7 @@ int h_pthread_mutex_lock(u32 m) {
     g_mutexes.get(m).lock();
     return 0;
 }
-int h_pthread_mutex_trylock(u32 m) { return g_mutexes.get(m).try_lock() ? 0 : EBUSY; }
+int h_pthread_mutex_trylock(u32 m) { return g_mutexes.get(m).try_lock() ? 0 : 16 /*EBUSY*/; }
 int h_pthread_mutex_unlock(u32 m) {
     g_mutexes.get(m).unlock();
     return 0;
@@ -111,12 +111,12 @@ int h_pthread_cond_wait(u32 c, u32 m) {
 int h_pthread_cond_timedwait_monotonic(u32 c, u32 m, u32 abstime) {
     using namespace std::chrono;
     const auto deadline = steady_clock::time_point(seconds(int32_t(ld32(abstime))) + nanoseconds(int32_t(ld32(abstime + 4))));
-    return g_conds.get(c).wait_until(g_mutexes.get(m), deadline) == std::cv_status::timeout ? ETIMEDOUT : 0;
+    return g_conds.get(c).wait_until(g_mutexes.get(m), deadline) == std::cv_status::timeout ? 110 /*ETIMEDOUT*/ : 0;
 }
 int h_pthread_cond_timedwait(u32 c, u32 m, u32 abstime) {
     using namespace std::chrono;
     const auto deadline = system_clock::time_point(seconds(int32_t(ld32(abstime))) + duration_cast<system_clock::duration>(nanoseconds(int32_t(ld32(abstime + 4)))));
-    return g_conds.get(c).wait_until(g_mutexes.get(m), deadline) == std::cv_status::timeout ? ETIMEDOUT : 0;
+    return g_conds.get(c).wait_until(g_mutexes.get(m), deadline) == std::cv_status::timeout ? 110 /*ETIMEDOUT*/ : 0;
 }
 int h_pthread_condattr_init(u32 a) {
     st32(a, 0);

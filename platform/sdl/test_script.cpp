@@ -37,6 +37,7 @@ void save_screenshot(SDL_Window* window, const std::string& path) {
 }
 
 TestScript::TestScript(SDL_Window* window) : window_(window) {
+#ifndef _WIN32
     if (const char* control = std::getenv("SLINGSHOT_CONTROL")) {
         if (mkfifo(control, 0600) && errno != EEXIST) {
             std::fprintf(stderr, "host: cannot create %s: %s\n", control, std::strerror(errno));
@@ -48,6 +49,7 @@ TestScript::TestScript(SDL_Window* window) : window_(window) {
             std::fprintf(stderr, "host: control pipe %s\n", control);
         }
     }
+#endif
     const char* path = std::getenv("SLINGSHOT_SCRIPT");
     if (!path) return;
     std::ifstream in(path);

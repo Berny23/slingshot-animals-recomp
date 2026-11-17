@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Slingshot Builder
+Comment=Builds and installs Angry Birds games from their APKs
+Exec=slingshot-builder %f
+Icon=slingshot-builder
+Categories=Development;Game;
+MimeType=application/vnd.android.package-archive;
+Terminal=false

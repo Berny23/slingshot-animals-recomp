@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // <string.h>, <ctype.h>, <wchar.h>, <wctype.h> and <stdlib.h> conversions.
+#include <algorithm>
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
@@ -32,12 +33,20 @@ void h_aeabi_memset(u32 d, u32 n, u32 c) { std::memset(P(d), int(c), n); }
 void h_aeabi_memclr(u32 d, u32 n) { std::memset(P(d), 0, n); }
 u32 h_memmem(u32 h, u32 hn, u32 n, u32 nn) {
     if (nn == 0) return h;
-    void* r = ::memmem(P(h), hn, P(n), nn);
-    return r ? mem::guest(r) : 0;
+    const auto* hay = static_cast<const uint8_t*>(P(h));
+    const auto* needle = static_cast<const uint8_t*>(P(n));
+    const auto* end = hay + hn;
+    const auto* r = std::search(hay, end, needle, needle + nn);
+    return r == end ? 0 : h + u32(r - hay);
 }
 int h_memcmp(u32 a, u32 b, u32 n) { return std::memcmp(P(a), P(b), n); }
 u32 h_memchr(u32 s, u32 c, u32 n) { return G(std::memchr(P(s), int(c), n)); }
-u32 h_memrchr(u32 s, u32 c, u32 n) { return G(::memrchr(P(s), int(c), n)); }
+u32 h_memrchr(u32 s, u32 c, u32 n) {
+    const auto* p = static_cast<const uint8_t*>(P(s));
+    for (u32 i = n; i-- > 0;)
+        if (p[i] == uint8_t(c)) return s + i;
+    return 0;
+}
 
 // ---- strings
 u32 h_strlen(u32 s) { return u32(std::strlen(str(s))); }

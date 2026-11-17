@@ -21,6 +21,7 @@ const GameInfo game = {
     "@GAME_MAIN_SCRIPT@",
     "@GAME_APP_CLASS@",
     "@GAME_INPUT_CLASS@",
+    "@GAME_DEFAULT_MODS@",
 };
 
 }  // namespace recomp

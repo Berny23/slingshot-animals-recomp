@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- A game as Android app: SDL's activity starts libmain.so (platform/sdl/main.cpp). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="@APK_PACKAGE@"
+    android:versionCode="@APK_VERSION_CODE@"
+    android:versionName="@GAME_VERSION@"
+    android:installLocation="auto">
+    <uses-feature android:glEsVersion="0x00020000" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <application
+        android:label="@GAME_TITLE@"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:appCategory="game"
+        android:extractNativeLibs="false"
+        android:hardwareAccelerated="true"
+        android:enableOnBackInvokedCallback="false"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+        <!-- Back reaches the game (its own back handling, as on Android). -->
+        <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON" android:value="1" />
+        <activity
+            android:name="org.libsdl.app.SDLActivity"
+            android:label="@GAME_TITLE@"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

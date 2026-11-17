@@ -21,7 +21,7 @@ struct GameInfo {
     const char* version;     // the APK's versionName
     const char* package;     // Android package name
     const char* library;     // lib<library>.so
-    const char* game_dir;    // default directory of the extracted APK
+    const char* game_dir;    // directory of the extracted APK when there is no game/ next to the executable ("" if none)
     uint32_t script_key;     // script key getter (returns a static vector<char>), 0 if unknown
     GameCipher cipher;
     uint32_t load_asset;     // asset loader wrapped as fusion_load_asset, 0 if none
@@ -32,6 +32,7 @@ struct GameInfo {
     const char* main_script;  // asset of the script run with the game's globals (gamelogic.lua)
     const char* app_class;    // Java class with the lifecycle natives (nativeInit, nativeUpdate, ...)
     const char* input_class;  // Java class with the input natives (nativeInput, nativeKeyInput, ...)
+    const char* default_mods;  // mods enabled without --mod or SLINGSHOT_MODS: "name,name" or "all"
 };
 
 extern const GameInfo game;
