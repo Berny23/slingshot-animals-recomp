@@ -29,6 +29,13 @@ int fsync(int fd);
 int truncate(int fd, int64_t size);
 int pipe(int fds[2]);
 bool valid_fd(int fd);
+// poll(2) with Linux event bits. Windows: pipes are ready to read when they hold
+// data or the writer is gone, other descriptors are always ready.
+struct PollFd {
+    int fd;
+    uint16_t events, revents;
+};
+int poll(PollFd* fds, size_t n, int timeout_ms);
 // fcntl F_GETFL as Linux flags.
 uint32_t fd_flags(int fd);
 // A temporary file from a template ending in XXXXXX (replaced in place).

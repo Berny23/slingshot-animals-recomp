@@ -196,7 +196,7 @@ Most mods patch scripts with `append_lua(script, code)` (`mods/common/game_scrip
 - `SDL_AUDIO_DRIVER=disk`: sound output to `sdlaudio.raw` (S16LE).
 - `SLINGSHOT_SCRIPT=<file>`: input events and screenshots at given frames (commands in `platform/sdl/test_script.hpp`).
 - `SLINGSHOT_CONTROL=<fifo>`: the same commands while the game runs (`echo "+0 shot a.bmp" > fifo`, `+n` = n frames from now). `sync <tag>` prints `host: sync <tag> frame <n>` once all earlier commands ran. `lua <code>` runs Lua in `main_script`'s environment on the next frame and logs `lua: <result>` (`mods/common/lua_console.cpp`); the game's Lua has no `io`, `os.remove` or `debug`.
-- Guest faults print the guest address, registers and a host backtrace with `fn_<addr>` names. A frame taking more than 10 s makes the watchdog print the same for the game thread.
+- Guest faults print the guest address, registers and a host backtrace with `fn_<addr>` names. A frame taking more than 10 s makes the watchdog print the same for the game thread. On Windows the backtrace is `<module>+<offset>` (`llvm-symbolizer --obj=<exe> <0x140000000 + offset>` names the frames of the executable); the watchdog suspends the game thread to take it. The Switch has no thread reports.
 
 ## 6. Layout
 

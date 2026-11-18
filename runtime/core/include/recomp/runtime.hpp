@@ -50,8 +50,8 @@ inline uint32_t guest_call(uint32_t addr, std::initializer_list<uint32_t> args =
 // Diagnostics.
 void dump_cpu(const CPU* c);
 bool trace_enabled(const char* channel);  // RECOMP_TRACE=imports,jni,... environment variable
-// Makes `thread` print its guest registers, guest stack and host backtrace to
-// stderr and carry on (for hangs).
+// Prints the guest registers, guest stack and host backtrace of `thread` to
+// stderr, which then carries on (for hangs). Not on the Switch.
 void request_thread_report(pthread_t thread);
 
 }  // namespace recomp

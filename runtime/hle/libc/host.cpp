@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cerrno>
 #include <cstring>
@@ -16,6 +17,7 @@
 #include <process.h>
 #include <windows.h>
 #else
+#include <poll.h>
 #include <pthread.h>
 #include <unistd.h>
 #ifdef __linux__
@@ -273,6 +275,50 @@ int pipe(int fds[2]) {
     return -1;
 #else
     return ::pipe(fds);
+#endif
+}
+
+int poll(PollFd* fds, size_t n, int timeout_ms) {
+#ifdef _WIN32
+    constexpr uint16_t kIn = 0x1 | 0x40 /*POLLRDNORM*/, kOut = 0x4 | 0x100 /*POLLWRNORM*/;
+    constexpr uint16_t kHup = 0x10, kInvalid = 0x20;
+    const ULONGLONG start = GetTickCount64();
+    for (DWORD pause = 1;; pause = std::min<DWORD>(pause * 2, 8)) {
+        int ready = 0;
+        for (size_t i = 0; i < n; ++i) {
+            PollFd& p = fds[i];
+            p.revents = 0;
+            if (p.fd < 0) continue;
+            const HANDLE h = reinterpret_cast<HANDLE>(::_get_osfhandle(p.fd));
+            if (h == INVALID_HANDLE_VALUE) {
+                p.revents = kInvalid;
+            } else if (GetFileType(h) != FILE_TYPE_PIPE) {
+                p.revents = p.events & (kIn | kOut);
+            } else {
+                DWORD available = 0;
+                if (!PeekNamedPipe(h, nullptr, 0, nullptr, &available, nullptr)) p.revents = kHup | (p.events & kIn);
+                else if (available) p.revents = p.events & kIn;
+                p.revents |= p.events & kOut;  // the write end: the buffer is assumed to have room
+            }
+            ready += p.revents != 0;
+        }
+        if (ready || timeout_ms == 0) return ready;
+        if (timeout_ms > 0) {
+            const ULONGLONG elapsed = GetTickCount64() - start;
+            if (elapsed >= ULONGLONG(timeout_ms)) return 0;
+            pause = std::min<DWORD>(pause, DWORD(ULONGLONG(timeout_ms) - elapsed));
+        }
+        Sleep(pause);
+    }
+#else
+    std::vector<pollfd> p(n);
+    for (size_t i = 0; i < n; ++i) {
+        p[i].fd = fds[i].fd;
+        p[i].events = short(fds[i].events);
+    }
+    const int r = ::poll(p.data(), nfds_t(n), timeout_ms);
+    for (size_t i = 0; i < n; ++i) fds[i].revents = uint16_t(p[i].revents);
+    return r;
 #endif
 }
 

@@ -10,7 +10,6 @@
 #ifdef _WIN32
 #include <io.h>
 #else
-#include <poll.h>
 #include <unistd.h>
 #endif
 
@@ -163,21 +162,11 @@ void h_ioctl(CPU* c) {
     c->r[0] = u32(fail(ENOTTY));
 }
 int h_poll(u32 fds, u32 n, int timeout) {
-#ifdef _WIN32
-    // Files and pipes are always ready.
-    (void)timeout;
-    for (u32 i = 0; i < n; ++i) st16(fds + 8 * i + 6, ld16(fds + 8 * i + 4));
-    return int(n);
-#else
-    std::vector<pollfd> p(n);
-    for (u32 i = 0; i < n; ++i) {
-        p[i].fd = int(ld32(fds + 8 * i));
-        p[i].events = short(ld16(fds + 8 * i + 4));
-    }
-    const int r = ::poll(p.data(), n, timeout);
-    for (u32 i = 0; i < n; ++i) st16(fds + 8 * i + 6, u32(uint16_t(p[i].revents)));
+    std::vector<host::PollFd> p(n);
+    for (u32 i = 0; i < n; ++i) p[i] = {int(ld32(fds + 8 * i)), uint16_t(ld16(fds + 8 * i + 4)), 0};
+    const int r = host::poll(p.data(), n, timeout);
+    for (u32 i = 0; i < n; ++i) st16(fds + 8 * i + 6, p[i].revents);
     return ret(r);
-#endif
 }
 int h_fstat(int fd, u32 out) {
     host::Stat s;

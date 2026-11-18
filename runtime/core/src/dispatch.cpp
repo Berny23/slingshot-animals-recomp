@@ -277,7 +277,20 @@ uint32_t guest_call(CPU* c, uint32_t addr, std::initializer_list<uint32_t> args)
 
 // ------------------------------------------------------------------ threads / CPUs
 CPU* current_cpu() { return t_cpu; }
+
+#ifdef _WIN32
+// Each thread's CPU, for reports made from another thread.
+static std::mutex g_thread_cpu_lock;
+static std::unordered_map<uint32_t, CPU*> g_thread_cpus;
+void bind_cpu(CPU* c) {
+    t_cpu = c;
+    std::lock_guard lk(g_thread_cpu_lock);
+    if (c) g_thread_cpus[os::current_thread_id()] = c;
+    else g_thread_cpus.erase(os::current_thread_id());
+}
+#else
 void bind_cpu(CPU* c) { t_cpu = c; }
+#endif
 
 static std::mutex g_stack_lock;
 static std::unordered_map<CPU*, uint32_t> g_stacks;  // guest stack of each CPU
@@ -418,7 +431,26 @@ void thread_report() {
 }  // namespace
 
 void request_thread_report(pthread_t thread) {
-#if defined(_WIN32) || defined(__SWITCH__)
+#ifdef _WIN32
+    // The thread is stopped while its registers are copied and its host stack is walked.
+    struct Copy {
+        const CPU* from;
+        CPU cpu;
+    } copy{nullptr, {}};
+    {
+        std::lock_guard lk(g_thread_cpu_lock);
+        const auto it = g_thread_cpus.find(os::thread_id(thread));
+        if (it != g_thread_cpus.end()) copy.from = it->second;
+    }
+    void* frames[64];
+    const int n = os::suspended_backtrace(thread, [](void* p) {
+        auto* c = static_cast<Copy*>(p);
+        if (c->from) std::memcpy(&c->cpu, c->from, sizeof(CPU));
+    }, &copy, frames, 64);
+    std::fprintf(stderr, "recomp: thread report\n");
+    if (copy.from) dump_cpu(&copy.cpu);
+    os::print_frames(frames, n);
+#elif defined(__SWITCH__)
     (void)thread;
     std::fprintf(stderr, "recomp: thread reports need POSIX signals\n");
 #else

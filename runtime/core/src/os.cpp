@@ -74,10 +74,63 @@ void install_fault_handler(void (*report)(const char*, uintptr_t)) {
 
 void install_thread_report(void (*)()) {}  // no signals to interrupt another thread
 
+void print_frames(void* const* frames, int n) {
+    for (int i = 0; i < n; ++i) {
+        HMODULE module = nullptr;
+        char path[MAX_PATH] = "?";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               static_cast<LPCSTR>(frames[i]), &module))
+            GetModuleFileNameA(module, path, sizeof path);
+        const char* name = path;
+        for (const char* p = path; *p; ++p)
+            if (*p == '\\' || *p == '/') name = p + 1;
+        std::fprintf(stderr, "  %s+0x%zx\n", name,
+                     size_t(static_cast<const char*>(frames[i]) - reinterpret_cast<const char*>(module)));
+    }
+}
+
 void print_backtrace() {
     void* frames[64];
-    const USHORT n = CaptureStackBackTrace(0, 64, frames, nullptr);
-    for (USHORT i = 0; i < n; ++i) std::fprintf(stderr, "  %p\n", frames[i]);
+    print_frames(frames, CaptureStackBackTrace(0, 64, frames, nullptr));
+}
+
+uint32_t thread_id(pthread_t thread) { return GetThreadId(reinterpret_cast<HANDLE>(pthread_gethandle(thread))); }
+uint32_t current_thread_id() { return GetCurrentThreadId(); }
+
+int suspended_backtrace(pthread_t thread, void (*stopped)(void*), void* arg, void** frames, int max) {
+    const HANDLE h = reinterpret_cast<HANDLE>(pthread_gethandle(thread));
+    if (!h || SuspendThread(h) == DWORD(-1)) return 0;
+    CONTEXT ctx{};
+    ctx.ContextFlags = CONTEXT_FULL;
+    int n = 0;
+    if (GetThreadContext(h, &ctx)) {
+        stopped(arg);
+#if defined(__x86_64__)
+        DWORD64& pc = ctx.Rip;
+#else
+        DWORD64& pc = ctx.Pc;
+#endif
+        while (n < max && pc) {
+            frames[n++] = reinterpret_cast<void*>(pc);
+            DWORD64 base = 0;
+            PRUNTIME_FUNCTION f = RtlLookupFunctionEntry(pc, &base, nullptr);
+            if (!f) {  // leaf function: the return address is on top of the stack (x64) or in lr
+#if defined(__x86_64__)
+                pc = *reinterpret_cast<DWORD64*>(ctx.Rsp);
+                ctx.Rsp += 8;
+#else
+                if (pc == ctx.Lr) break;
+                pc = ctx.Lr;
+#endif
+                continue;
+            }
+            void* handler_data = nullptr;
+            DWORD64 frame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, pc, f, &ctx, &handler_data, &frame, nullptr);
+        }
+    }
+    ResumeThread(h);
+    return n;
 }
 
 #elif defined(__SWITCH__)

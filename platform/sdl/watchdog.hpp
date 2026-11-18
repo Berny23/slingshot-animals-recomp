@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Reports a hanging game thread: if one frame (the game's update and render)
-// takes longer than a few seconds, the thread prints its guest registers, guest
-// stack and host backtrace to stderr (recomp::request_thread_report) and goes on.
+// takes longer than a few seconds, its guest registers, guest stack and host
+// backtrace go to stderr (recomp::request_thread_report) and the thread goes on.
 // The report repeats every few seconds while the frame does not finish.
 #pragma once
 
