@@ -43,7 +43,7 @@ All mods are on by default. In the builder, *Advanced* chooses which ones a game
 | `keyboard` | all | Play with the keyboard: hold Space, aim with W A S D or arrows, release to shoot, Space again for the bird's ability; arrows move the camera, + / - zoom, R restarts, P pauses, Enter continues |
 | `gamepad-pointer` | all | Play with a gamepad: the left stick moves a cursor (right stick slowly), A taps, triggers zoom, B is Back |
 | `tap-to-skip` | all | Tap to skip the wait at the end of a level |
-| `fullscreen` | all | F11 toggles fullscreen. `--mod-option fullscreen.aspect=16:9` keeps the game at 16:9 in fullscreen, with black bars on ultrawide screens |
+| `fullscreen` | all | F11 toggles fullscreen. `--mod-option fullscreen.start=1` starts in fullscreen, `--mod-option fullscreen.aspect=16:9` keeps the game at 16:9 in fullscreen, with black bars on ultrawide screens |
 | `phone-scale` | Star Wars | On phones, menus and buttons are as large as in the other games |
 | `hide-dead-services` | all | Hides buttons and messages of discontinued online services |
 | `offline-shop` | all | Everything sold for real money can be earned by playing |

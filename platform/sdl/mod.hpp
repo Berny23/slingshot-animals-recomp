@@ -56,6 +56,8 @@ public:
     // ratio the game's screen is held at, or 0 for the window's own. The screen is
     // then centred in the window with black bars.
     virtual float screen_aspect(bool fullscreen) { return 0; }
+    // Called once before the window is created: true to open it in fullscreen.
+    virtual bool start_fullscreen() { return false; }
 };
 
 struct ModInfo {

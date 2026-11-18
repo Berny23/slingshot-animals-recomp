@@ -391,7 +391,9 @@ int run(int argc, char** argv) {
         // Immersive: the game covers the system bars, as the original's full-screen activity.
         constexpr SDL_WindowFlags mode = SDL_WINDOW_FULLSCREEN;
 #else
-        constexpr SDL_WindowFlags mode = SDL_WINDOW_RESIZABLE;
+        SDL_WindowFlags mode = SDL_WINDOW_RESIZABLE;
+        for (auto& m : mods)
+            if (m->start_fullscreen()) mode |= SDL_WINDOW_FULLSCREEN;
 #endif
         window = SDL_CreateWindow(recomp::game.title, 1280, 720,
                                   SDL_WINDOW_OPENGL | mode | SDL_WINDOW_HIGH_PIXEL_DENSITY);
