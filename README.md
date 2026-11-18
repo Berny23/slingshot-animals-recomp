@@ -14,7 +14,7 @@ Unofficial static recompilation of Rovio's old Android *Angry Birds* games. Each
 1. Download **Slingshot Builder** for your system from the [releases](https://github.com/Berny23/slingshot-animals-recomp/releases/latest) (Linux AppImage, Windows exe, macOS app).
 
 2. Open the builder:
-    - **Linux**: Just run the AppImage.
+    - **Linux**: Just run the AppImage. It can be updated with tools like [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) or AppImageUpdate.
     - **Windows**: As the builder is not signed, SmartScreen may warn you, which is normal. Just click *More info* → *Run anyway*.
     - **MacOS**: Open the builder with right-click → *Open* the first time. It needs Apple's Command Line Tools and offers to install them.
 

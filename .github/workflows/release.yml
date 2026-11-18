@@ -108,13 +108,18 @@ jobs:
           cp tools/builder/resources/builder.png slingshot-builder.png
           # No "linux" in the name (AppImage catalog convention)
           export QMAKE="$QT_ROOT_DIR/bin/qmake" OUTPUT="slingshot-builder-x86_64.AppImage"
+          # Update information for AppImageUpdate and Gear Lever; also writes the .zsync file
+          # Written to the desktop file as X-AppImage-Version, shown by Gear Lever
+          export LINUXDEPLOY_OUTPUT_VERSION="${GITHUB_REF_NAME#v}"
+          export LDAI_UPDATE_INFORMATION="gh-releases-zsync|${GITHUB_REPOSITORY%%/*}|${GITHUB_REPOSITORY#*/}|latest|$OUTPUT.zsync"
           ./linuxdeploy --appdir AppDir --executable out/slingshot-builder \
             --desktop-file tools/builder/resources/slingshot-builder.desktop \
             --icon-file slingshot-builder.png \
             --plugin qt --output appimage
           # Fail here rather than in the catalog test
           test -e AppDir/.DirIcon
-          mkdir dist && mv "$OUTPUT" dist/
+          test -e "$OUTPUT.zsync"
+          mkdir dist && mv "$OUTPUT" "$OUTPUT.zsync" dist/
 
       - name: Package (Windows exe)
         if: runner.os == 'Windows'
