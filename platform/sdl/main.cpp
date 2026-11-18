@@ -23,6 +23,11 @@
 
 #include "switch_host.hpp"
 #endif
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 #include <cmath>
 #include <cstdio>
@@ -275,7 +280,7 @@ void list_mods() {
 }
 
 constexpr char kUsage[] =
-    "usage: %s [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods] "
+    "usage: %s [--help] [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods] "
     "[--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>] [--dump-scripts <dir>] [game-dir]\n";
 
 // Returns false when the program should exit right away (help, mod list).
@@ -315,6 +320,10 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
             opt.locale = argv[++i];
         } else if (!std::strcmp(argv[i], "--dump-scripts") && i + 1 < argc) {
             opt.dump_dir = argv[++i];
+        } else if (!std::strcmp(argv[i], "--help") || !std::strcmp(argv[i], "-h")) {
+            std::printf(kUsage, argv[0]);
+            status = 0;
+            return false;
         } else if (!std::strcmp(argv[i], "--list-mods")) {
             list_mods();
             status = 0;
@@ -428,10 +437,14 @@ int run(int argc, char** argv) {
     }
     SDL_GL_SetSwapInterval(1);
     // Where the driver still hands out an sRGB framebuffer, its encoding is switched off.
-    if (desktop_gl || SDL_GL_ExtensionSupported("GL_EXT_sRGB_write_control")) {
-        if (auto disable = reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glDisable")))
-            disable(0x8DB9);  // GL_FRAMEBUFFER_SRGB
-    }
+    // Again each frame: after a fullscreen change Windows drivers may present through a
+    // new surface that has it on.
+    const auto disable_srgb = [disable = (desktop_gl || SDL_GL_ExtensionSupported("GL_EXT_sRGB_write_control"))
+                                             ? reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glDisable"))
+                                             : nullptr] {
+        if (disable) disable(0x8DB9);  // GL_FRAMEBUFFER_SRGB
+    };
+    disable_srgb();
     recomp::gles::set_loader(gl_loader);
     recomp::gles::set_desktop_gl(desktop_gl);
     // Where the game's screen is on the surface (pixels from the top left): the whole
@@ -578,6 +591,7 @@ int run(int argc, char** argv) {
         watchdog.frame_started();
         recomp::java::run_posted();
         input.deliver();
+        disable_srgb();
         recomp::gles::clear_outside_screen(w, h);
         if (!app.update()) running = false;
         watchdog.frame_finished();
@@ -598,7 +612,21 @@ int run(int argc, char** argv) {
 
 }  // namespace
 
+#ifdef _WIN32
+// A GUI executable has no console: output goes to the one of the shell that
+// started it, unless it is redirected.
+static void attach_parent_console() {
+    const bool out = GetStdHandle(STD_OUTPUT_HANDLE), err = GetStdHandle(STD_ERROR_HANDLE);
+    if ((out && err) || !AttachConsole(ATTACH_PARENT_PROCESS)) return;
+    if (!out) std::freopen("CONOUT$", "w", stdout);
+    if (!err) std::freopen("CONOUT$", "w", stderr);
+}
+#endif
+
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    attach_parent_console();
+#endif
 #ifdef __SWITCH__
     // Recompiled code needs a large stack: the game runs on a thread with 8 MiB.
     slingshot::nx::init();

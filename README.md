@@ -112,6 +112,7 @@ build/bin/slingshot-<id> [options] [game-dir]
 
 | Option | Description |
 | --- | --- |
+| `--help` | Show the options |
 | `--list-mods` | List the mods |
 | `--mod <name>` | Enable only the given mods (repeatable), like `SLINGSHOT_MODS=a,b` |
 | `--no-mod <name>` | Disable a mod |
