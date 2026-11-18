@@ -566,21 +566,33 @@ local function make_page_class()
 
     function Page:init()
         ui.Frame.init(self, {name = 'gameStatisticsPage'})
+        self:build(1)
+    end
+
+    -- The page for the screen size: designed for 1180 x 720 (the board and a
+    -- margin), scaled to fit and centred; built again when the size changes.
+    function Page:build(page)
+        self:removeAllChildren()
+        self.rows = nil
         local W, H = screenWidth, screenHeight
-        local s, cx = H / 720, W / 2
+        self.builtW, self.builtH = W, H
+        local s = math.min(H / 720, W / 1180)
+        local cx, top = W / 2, (H - 720 * s) / 2
+        self.s, self.top = s, top
+        local function Y(v) return top + v * s end
         self.x, self.y = 0, 0
         rect(self, 0, 0, W, H, 0, 0, 0, 0.6)
-        image(self, 'GENERAL_UI_BG', cx, 351 * s, 1.64 * s, 1.142 * s)
-        image(self, 'POPUP_BG_SMALL1', cx - 282 * s, 452 * s, 1.48 * s, 2.17 * s)
-        image(self, 'POPUP_BG_SMALL1', cx + 282 * s, 452 * s, 1.48 * s, 2.17 * s)
-        label(self, text('title'), cx, 166 * s, 'HCENTER', 2 * s, 700 * s)
-        button(self, 'STATISTICS_CLOSE', 'UI_BUTTON_WOOD_SMALL', cx + 475 * s, 155 * s, s)
+        image(self, 'GENERAL_UI_BG', cx, Y(351), 1.64 * s, 1.142 * s)
+        image(self, 'POPUP_BG_SMALL1', cx - 282 * s, Y(452), 1.48 * s, 2.17 * s)
+        image(self, 'POPUP_BG_SMALL1', cx + 282 * s, Y(452), 1.48 * s, 2.17 * s)
+        label(self, text('title'), cx, Y(166), 'HCENTER', 2 * s, 700 * s)
+        button(self, 'STATISTICS_CLOSE', 'UI_BUTTON_WOOD_SMALL', cx + 475 * s, Y(155), s)
 
         -- left: the progress and the counters
         local left, right = cx - 495 * s, cx - 55 * s
         local list = parts()
         local total = statistics.progress(list)
-        local y = 232 * s
+        local y = Y(232)
         local percent = label(self, string.format('%d %%', math.floor(total * 100)), right, y, 'RIGHT', 1.5 * s)
         label(self, text('progress'), left, y, 'LEFT', 1.5 * s, right - left - percent.scaledWidth - 12 * s)
         y = y + 38 * s
@@ -604,18 +616,23 @@ local function make_page_class()
         self.list = listed()
         local count = 0
         for _, a in ipairs(self.list) do if unlocked(a) then count = count + 1 end end
-        self.area = {x0 = cx + 55 * s, x1 = cx + 495 * s, y = 232 * s}
+        self.area = {x0 = cx + 55 * s, x1 = cx + 495 * s, y = Y(232)}
         local n = label(self, number(count) .. ' / ' .. number(#self.list), self.area.x1, self.area.y, 'RIGHT', 1.5 * s)
         label(self, text('achievements'), self.area.x0, self.area.y, 'LEFT', 1.5 * s,
               self.area.x1 - self.area.x0 - n.scaledWidth - 12 * s)
         self.pages = math.max(1, math.ceil(#self.list / PER_PAGE))
-        local by = 646 * s
+        local by = Y(646)
         self.back = button(self, 'STATISTICS_BACK', 'BTN_BG_SMALL', self.area.x0 + 26 * s, by, 0.55 * s)
         image(self.back, 'ICON_ARROW_LEFT', 0, 0, 1)
         self.forward = button(self, 'STATISTICS_FORWARD', 'BTN_BG_SMALL', self.area.x1 - 26 * s, by, 0.55 * s)
         image(self.forward, 'ICON_ARROW_LEFT', 0, 0, -1, 1)
         self.pageText = label(self, '', (self.area.x0 + self.area.x1) / 2, by - 11 * s, 'HCENTER', 1.3 * s)
-        self:showPage(1)
+        self:showPage(page)
+    end
+
+    function Page:update(...)
+        if screenWidth ~= self.builtW or screenHeight ~= self.builtH then self:build(self.page) end
+        return ui.Frame.update(self, ...)
     end
 
     function Page:showPage(page)
@@ -625,7 +642,7 @@ local function make_page_class()
         local rows = ui.Frame:new({name = unique('rows')})
         self.rows = rows
         self:addChild(rows)
-        local s = screenHeight / 720
+        local s = self.s
         local area = self.area
         local y = area.y + 40 * s
         local text_x = area.x0 + 56 * s
@@ -724,18 +741,27 @@ end
 )";
 
 // The island: the trophy button right of the scrapbook, shown with the other
-// buttons.
+// buttons. Placed after every layout too, which puts it back where the layout
+// file has it (bottom centre).
 constexpr const char* kIsland = R"(
-local update = ui.IslandMap.update
-function ui.IslandMap:update(...)
-    local results = {update(self, ...)}
-    local b = self:getChild('btnAchievements')
-    local scrapbook, settings = self:getChild('btnscrapbook'), self:getChild('btnsettings')
+local function place_trophy(map)
+    local b = map:getChild('btnAchievements')
+    local scrapbook, settings = map:getChild('btnscrapbook'), map:getChild('btnsettings')
     if b and scrapbook and settings then
         b:setVisible(settings.visible)
         b.x = scrapbook.x + 1.3 * (b.w or 104) * (b.scaleX or 1)
         b.y = scrapbook.y
     end
+end
+local update, layout = ui.IslandMap.update, ui.IslandMap.layout
+function ui.IslandMap:update(...)
+    local results = {update(self, ...)}
+    place_trophy(self)
+    return unpack(results)
+end
+function ui.IslandMap:layout(...)
+    local results = {layout(self, ...)}
+    place_trophy(self)
     return unpack(results)
 end
 function ui.IslandMap:openAchievements() gameStatisticsOpen() end
