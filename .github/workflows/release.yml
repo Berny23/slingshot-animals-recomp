@@ -104,11 +104,17 @@ jobs:
           cmake -S platform/linux/sdl3 -B sdl3-build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build sdl3-build
           cmake --install sdl3-build --prefix AppDir/usr/share/slingshot-builder/sdl3
+          # The PNG becomes .DirIcon (an SVG alone gives none)
           cp tools/builder/resources/builder.svg slingshot-builder.svg
-          export QMAKE="$QT_ROOT_DIR/bin/qmake" OUTPUT="slingshot-builder-${{ matrix.package }}.AppImage"
+          cp tools/builder/resources/builder.png slingshot-builder.png
+          # No "linux" in the name (AppImage catalog convention)
+          export QMAKE="$QT_ROOT_DIR/bin/qmake" OUTPUT="slingshot-builder-x86_64.AppImage"
           ./linuxdeploy --appdir AppDir --executable out/slingshot-builder \
-            --desktop-file tools/builder/resources/slingshot-builder.desktop --icon-file slingshot-builder.svg \
+            --desktop-file tools/builder/resources/slingshot-builder.desktop \
+            --icon-file slingshot-builder.png --icon-file slingshot-builder.svg \
             --plugin qt --output appimage
+          # Fail here rather than in the catalog test
+          test -e AppDir/.DirIcon
           mkdir dist && mv "$OUTPUT" dist/
 
       - name: Package (Windows exe)
