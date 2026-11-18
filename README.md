@@ -40,7 +40,7 @@ All mods are on by default. In the builder, *Advanced* chooses which ones a game
 | Mod | Games | Description |
 | --- | --- | --- |
 | `mouse-wheel` | all | Mouse wheel zooms in levels and scrolls menus |
-| `keyboard` | all | Play with the keyboard: hold Space, aim with W A S D or arrows, release to shoot, Space again for the bird's ability; arrows move the camera, + / - zoom, R restarts, P pauses, Enter continues |
+| `keyboard` | all | Play with the keyboard: hold Space, aim with W A S D or arrows, release to shoot, Space again for the bird's ability (hold it and W A S D or arrows steer aiming abilities); arrows move the camera, + / - zoom, R restarts, P pauses, Enter continues |
 | `gamepad-pointer` | all | Play with a gamepad: the left stick moves a cursor (right stick slowly), A taps, triggers zoom, B is Back |
 | `tap-to-skip` | all | Tap to skip the wait at the end of a level |
 | `fullscreen` | all | F11 toggles fullscreen. `--mod-option fullscreen.start=1` starts in fullscreen, `--mod-option fullscreen.aspect=16:9` keeps the game at 16:9 in fullscreen, with black bars on ultrawide screens |

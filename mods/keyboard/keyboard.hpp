@@ -6,7 +6,8 @@
 //                         release to shoot. A new grab starts at the last aim,
 //                         and waits for the bird to stand still on the screen.
 //   Space                 while a bird flies: its ability (a touch, held as long
-//                         as Space is)
+//                         as Space is); W A S D or arrows move the touch, which
+//                         aiming abilities follow (Shift: slowly)
 //   arrow keys            move the camera (a drag on the scenery)
 //   + / -                 zoom in / out (a pinch; also = and the keypad's + and -)
 //   Z                     switch between the close and the far view, where the game has it
@@ -242,7 +243,7 @@ public:
             back_ = true;
         }
         if (ability_ >= 0) {
-            if (down_[kSpace]) return;
+            if (down_[kSpace]) return steer(dt, ctx);
             ctx.input.pointer_up(ability_);
             ability_ = -1;
         }
@@ -251,7 +252,9 @@ public:
         if (s.playing) {
             if (pressed[kSpace]) {
                 if (s.flying) {
-                    tap(a.x + a.width * 0.5f, a.y + a.height * 0.5f, ctx);
+                    ability_x_ = a.x + a.width * 0.5f;
+                    ability_y_ = a.y + a.height * 0.5f;
+                    tap(ability_x_, ability_y_, ctx);
                     std::swap(ability_, tap_);  // released with Space
                     return;
                 }
@@ -304,6 +307,7 @@ private:
     static constexpr float kAimSpeed = 0.8f, kFineAimSpeed = 0.1f;  // the band's reach per second
     static constexpr float kAimLimit = 1.2f;
     static constexpr float kPanSpeed = 0.8f;  // surface widths per second
+    static constexpr float kSteerSpeed = 0.9f, kFineSteerSpeed = 0.2f;  // screen heights per second
     static constexpr float kZoomRate = 0.9f;  // natural log of the finger distance change per second
     static constexpr uint64_t kPinchIdleNs = 100'000'000;
     static constexpr uint64_t kRestartWaitNs = 2'000'000'000;
@@ -378,6 +382,18 @@ private:
         pan_ = ctx.input.pointer_down(pan_x_, pan_y_);
     }
 
+    // The held ability touch follows W A S D or the arrows: abilities that aim
+    // (Stella's birds) point at the finger.
+    void steer(float dt, ModContext& ctx) {
+        const float dx = axis(kA, kLeft, kD, kRight), dy = axis(kW, kUp, kS, kDown);
+        if (!dx && !dy) return;
+        const SurfaceRect& a = ctx.screen;
+        const float step = (down_[kShift] ? kFineSteerSpeed : kSteerSpeed) * a.height * dt;
+        ability_x_ = std::clamp(ability_x_ + dx * step, a.x, a.x + a.width - 1.0f);
+        ability_y_ = std::clamp(ability_y_ + dy * step, a.y, a.y + a.height - 1.0f);
+        ctx.input.pointer_move(ability_, ability_x_, ability_y_);
+    }
+
     void end_pan(ModContext& ctx) {
         if (pan_ < 0) return;
         ctx.input.pointer_up(pan_);
@@ -398,7 +414,7 @@ private:
     int tap_ = -1, ability_ = -1, aim_ = -1, pan_ = -1;
     float anchor_x_ = 0, anchor_y_ = 0, reach_ = 0, dx_ = 0, dy_ = 0, last_dx_ = 0, last_dy_ = 0;
     std::string aim_level_;
-    float pan_x_ = 0, pan_y_ = 0;
+    float pan_x_ = 0, pan_y_ = 0, ability_x_ = 0, ability_y_ = 0;
     slingshot::mods::EmulatedPinch pinch_;
 };
 
