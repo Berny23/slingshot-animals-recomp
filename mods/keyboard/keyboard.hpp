@@ -221,7 +221,8 @@ public:
             bird_still = SDL_GetTicksNS() - bird_moved_ns_ >= kBirdStillNs;
         }
         // The script reports game pixels; touches are surface pixels.
-        for (Point* p : {&s.bird, &s.restart, &s.next}) p->x *= ctx.screen_scale, p->y *= ctx.screen_scale;
+        const SurfaceRect& a = ctx.screen;
+        for (Point* p : {&s.bird, &s.restart, &s.next}) p->x = a.x + p->x * ctx.screen_scale, p->y = a.y + p->y * ctx.screen_scale;
         s.reach *= ctx.screen_scale;
         const float dt = last_ns_ ? std::min((ctx.now_ns - last_ns_) * 1e-9f, 0.1f) : 0.0f;
         last_ns_ = ctx.now_ns;
@@ -250,7 +251,7 @@ public:
         if (s.playing) {
             if (pressed[kSpace]) {
                 if (s.flying) {
-                    tap(ctx.width * 0.5f, ctx.height * 0.5f, ctx);
+                    tap(a.x + a.width * 0.5f, a.y + a.height * 0.5f, ctx);
                     std::swap(ability_, tap_);  // released with Space
                     return;
                 }
@@ -267,7 +268,7 @@ public:
             }
             pan(s, dt, ctx);
             const float zoom = float(down_[kPlus]) - float(down_[kMinus]);
-            if (zoom != 0 && pan_ < 0) pinch_.zoom(std::exp(zoom * kZoomRate * dt), ctx.width * 0.5f, ctx.height * 0.5f, ctx.now_ns);
+            if (zoom != 0 && pan_ < 0) pinch_.zoom(std::exp(zoom * kZoomRate * dt), a.x + a.width * 0.5f, a.y + a.height * 0.5f, ctx.now_ns);
         } else {
             end_pan(ctx);
             want_grab_ = false;
@@ -346,8 +347,9 @@ private:
         dy_ += axis(kW, kUp, kS, kDown) * speed;
         const float length = std::hypot(dx_, dy_);
         if (length > kAimLimit) dx_ *= kAimLimit / length, dy_ *= kAimLimit / length;
-        const float x = std::clamp(anchor_x_ + dx_ * reach_, 0.0f, ctx.width - 1.0f);
-        const float y = std::clamp(anchor_y_ + dy_ * reach_, 0.0f, ctx.height - 1.0f);
+        const SurfaceRect& a = ctx.screen;
+        const float x = std::clamp(anchor_x_ + dx_ * reach_, a.x, a.x + a.width - 1.0f);
+        const float y = std::clamp(anchor_y_ + dy_ * reach_, a.y, a.y + a.height - 1.0f);
         ctx.input.pointer_move(aim_, x, y);
     }
 
@@ -356,21 +358,23 @@ private:
     void pan(const Status& s, float dt, ModContext& ctx) {
         const float dx = axis(-1, kLeft, -1, kRight), dy = axis(-1, kUp, -1, kDown);
         if ((dx == 0 && dy == 0) || s.flying || pinch_.active()) return end_pan(ctx);
-        const float step = kPanSpeed * ctx.width * dt;
+        const SurfaceRect& a = ctx.screen;
+        const float step = kPanSpeed * a.width * dt;
         if (pan_ >= 0) {
             pan_x_ -= dx * step;
             pan_y_ -= dy * step;
-            const float margin = ctx.height * 0.1f;
-            if (pan_x_ < margin || pan_x_ > ctx.width - margin || pan_y_ < margin || pan_y_ > ctx.height - margin) {
+            const float margin = a.height * 0.1f;
+            if (pan_x_ < a.x + margin || pan_x_ > a.x + a.width - margin || pan_y_ < a.y + margin ||
+                pan_y_ > a.y + a.height - margin) {
                 return end_pan(ctx);
             }
             ctx.input.pointer_move(pan_, pan_x_, pan_y_);
             return;
         }
         // Land where the scenery is: away from the HUD and the slingshot.
-        pan_x_ = ctx.width * (0.5f + 0.25f * dx);
-        pan_y_ = ctx.height * (0.5f + 0.25f * dy);
-        if (s.bird.set && std::hypot(pan_x_ - s.bird.x, pan_y_ - s.bird.y) < s.reach * 2) pan_x_ = ctx.width * 0.6f;
+        pan_x_ = a.x + a.width * (0.5f + 0.25f * dx);
+        pan_y_ = a.y + a.height * (0.5f + 0.25f * dy);
+        if (s.bird.set && std::hypot(pan_x_ - s.bird.x, pan_y_ - s.bird.y) < s.reach * 2) pan_x_ = a.x + a.width * 0.6f;
         pan_ = ctx.input.pointer_down(pan_x_, pan_y_);
     }
 

@@ -16,6 +16,7 @@
 namespace {
 
 using slingshot::ModContext;
+using slingshot::SurfaceRect;
 namespace android = slingshot::android;
 
 constexpr float kDeadzone = 0.15f;
@@ -56,20 +57,23 @@ public:
     }
 
     void on_frame(ModContext& ctx) override {
+        const SurfaceRect& a = ctx.screen;
         if (!placed_) {
-            x_ = ctx.width * 0.5f;
-            y_ = ctx.height * 0.5f;
+            x_ = a.x + a.width * 0.5f;
+            y_ = a.y + a.height * 0.5f;
             placed_ = true;
         }
         const float dt = last_ns_ ? std::min((ctx.now_ns - last_ns_) * 1e-9f, 0.1f) : 0.0f;
         last_ns_ = ctx.now_ns;
 
-        const float fast = kFastSpeed * ctx.height * dt, slow = kSlowSpeed * ctx.height * dt;
+        const float fast = kFastSpeed * a.height * dt, slow = kSlowSpeed * a.height * dt;
         const float dx = shaped(axes_[SDL_GAMEPAD_AXIS_LEFTX]) * fast + shaped(axes_[SDL_GAMEPAD_AXIS_RIGHTX]) * slow;
         const float dy = shaped(axes_[SDL_GAMEPAD_AXIS_LEFTY]) * fast + shaped(axes_[SDL_GAMEPAD_AXIS_RIGHTY]) * slow;
-        if (dx || dy) {
-            x_ = std::clamp(x_ + dx, 0.0f, ctx.width - 1.0f);
-            y_ = std::clamp(y_ + dy, 0.0f, ctx.height - 1.0f);
+        // Kept on the game's screen, also when it moved (bars, window size).
+        const float x = std::clamp(x_ + dx, a.x, a.x + a.width - 1.0f), y = std::clamp(y_ + dy, a.y, a.y + a.height - 1.0f);
+        if (x != x_ || y != y_) {
+            x_ = x;
+            y_ = y;
             if (pointer_ >= 0) ctx.input.pointer_move(pointer_, x_, y_);
         }
 
@@ -84,7 +88,7 @@ public:
 
     void on_overlay(slingshot::Overlay& overlay, ModContext& ctx) override {
         if (!shown_) return;
-        const float r = std::max(8.0f, ctx.height * 0.018f);
+        const float r = std::max(8.0f, ctx.screen.height * 0.018f);
         overlay.ring(x_, y_, r + 2, 0, 0x00000060);  // shadow for contrast on bright backgrounds
         overlay.ring(x_, y_, r, pointer_ >= 0 ? 0 : r * 0.55f, 0xffffffe0);
     }

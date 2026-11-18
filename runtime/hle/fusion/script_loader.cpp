@@ -18,7 +18,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <sstream>
 #include <string>
 
 #include "recomp/cpu.hpp"
@@ -111,12 +110,17 @@ bool ends_with(const std::string& s, const char* e) {
 
 int dump_encrypted_assets(const std::string& dir) {
     CPU* c = current_cpu();
-    const auto list = vfs_read_asset("assets.list");
     const uint32_t operator_delete = lib_symbol("_ZdlPv");
-    if (!c || !list || !game.cipher.decrypt || !operator_delete) return -1;
-    std::istringstream names(std::string(list->begin(), list->end()));
+    if (!c || !game.cipher.decrypt || !operator_delete) return -1;
+    // The extracted assets (not every APK has an assets.list).
+    const std::filesystem::path root(vfs_asset_root());
+    std::error_code ec;
+    std::vector<std::string> names;
+    for (const auto& e : std::filesystem::recursive_directory_iterator(root, ec))
+        if (e.is_regular_file()) names.push_back(e.path().lexically_relative(root).generic_string());
+    if (ec) return -1;
     int count = 0;
-    for (std::string name; std::getline(names, name);) {
+    for (const std::string& name : names) {
         const bool config = name.rfind("data/config/", 0) == 0 && ends_with(name, ".zip");
         if (config ? !game.load_config : !ends_with(name, ".lua") && !ends_with(name, ".json")) continue;
         // The extracted file, without the mods' patches.

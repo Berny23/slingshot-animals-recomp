@@ -45,10 +45,13 @@ void set_desktop_gl(bool desktop) {
 bool desktop_gl() { return g_desktop; }
 
 namespace {
-float g_screen_scale = 1;
-}
-void set_screen_scale(float scale) { g_screen_scale = scale > 0 ? scale : 1; }
-float screen_scale() { return g_screen_scale; }
+// gles::set_screen_area
+struct ScreenArea {
+    int x = 0, y = 0, w = 0, h = 0;
+    float scale = 1;
+    bool mapped() const { return scale != 1 || x || y; }
+} g_area;
+}  // namespace
 
 std::string host_shader(const std::string& es) {
     if (!g_desktop) return es;
@@ -96,40 +99,81 @@ thread_local u32 t_array_buffer = 0, t_element_buffer = 0;
 void h_glActiveTexture(u32 t) { GL(glActiveTexture, void(GLenum)); fn(t); }
 void h_glBlendEquation(u32 m) { GL(glBlendEquation, void(GLenum)); fn(m); }
 void h_glBlendFunc(u32 s, u32 d) { GL(glBlendFunc, void(GLenum, GLenum)); fn(s, d); }
-void h_glClear(u32 m) { GL(glClear, void(GLbitfield)); fn(m); }
 void h_glClearColor(float r, float g, float b, float a) { GL(glClearColor, void(GLfloat, GLfloat, GLfloat, GLfloat)); fn(r, g, b, a); }
 void h_glCullFace(u32 m) { GL(glCullFace, void(GLenum)); fn(m); }
 void h_glDepthFunc(u32 f) { GL(glDepthFunc, void(GLenum)); fn(f); }
 void h_glDepthMask(u32 f) { GL(glDepthMask, void(GLboolean)); fn(GLboolean(f)); }
-void h_glDisable(u32 c) { GL(glDisable, void(GLenum)); fn(c); }
-void h_glEnable(u32 c) { GL(glEnable, void(GLenum)); fn(c); }
+bool g_scissor_test = false;
+void h_glDisable(u32 c) {
+    GL(glDisable, void(GLenum));
+    fn(c);
+    if (c == GL_SCISSOR_TEST) g_scissor_test = false;
+}
+void h_glEnable(u32 c) {
+    GL(glEnable, void(GLenum));
+    fn(c);
+    if (c == GL_SCISSOR_TEST) g_scissor_test = true;
+}
 void h_glFinish() { GL(glFinish, void()); fn(); }
 void h_glFlush() { GL(glFlush, void()); fn(); }
 void h_glFrontFace(u32 m) { GL(glFrontFace, void(GLenum)); fn(m); }
 u32 h_glGetError() { GL(glGetError, GLenum()); return fn(); }
 void h_glPixelStorei(u32 p, int v) { GL(glPixelStorei, void(GLenum, GLint)); fn(p, v); }
 // Viewport and scissor as the game set them; on the screen (framebuffer 0) they
-// are scaled by gles::set_screen_scale, also when the binding changes later.
+// are mapped to gles::set_screen_area, also when the binding or the area changes later.
 struct Rect {
     int x, y, w, h;
     bool set;
 };
 Rect g_viewport{}, g_scissor{};
 bool g_on_screen = true;
+bool screen_mapped() { return g_on_screen && gles::g_area.mapped(); }
+// The surface rectangle of a rectangle on the game's screen.
+Rect to_surface(int x, int y, int w, int h) {
+    const auto& a = gles::g_area;
+    const int x0 = int(std::lround(x * a.scale)), y0 = int(std::lround(y * a.scale));
+    return {a.x + x0, a.y + y0, int(std::lround((x + w) * a.scale)) - x0, int(std::lround((y + h) * a.scale)) - y0, true};
+}
 void apply_rect(void (*fn)(GLint, GLint, GLsizei, GLsizei), const Rect& r) {
     if (!r.set) return;
-    const float k = g_on_screen ? gles::screen_scale() : 1;
-    if (k == 1) {
-        fn(r.x, r.y, r.w, r.h);
-        return;
-    }
-    const int x0 = int(std::lround(r.x * k)), y0 = int(std::lround(r.y * k));
-    fn(x0, y0, int(std::lround((r.x + r.w) * k)) - x0, int(std::lround((r.y + r.h) * k)) - y0);
+    if (!screen_mapped()) return fn(r.x, r.y, r.w, r.h);
+    const Rect s = to_surface(r.x, r.y, r.w, r.h);
+    fn(s.x, s.y, s.w, s.h);
+}
+// On a mapped screen the scissor box stays inside the area, as on the device's screen.
+void apply_scissor(void (*fn)(GLint, GLint, GLsizei, GLsizei)) {
+    if (!g_scissor.set) return;
+    if (!screen_mapped()) return fn(g_scissor.x, g_scissor.y, g_scissor.w, g_scissor.h);
+    const Rect s = to_surface(g_scissor.x, g_scissor.y, g_scissor.w, g_scissor.h);
+    const auto& a = gles::g_area;
+    const int x0 = std::max(s.x, a.x), y0 = std::max(s.y, a.y);
+    const int x1 = std::min(s.x + s.w, a.x + a.w), y1 = std::min(s.y + s.h, a.y + a.h);
+    fn(x0, y0, std::max(0, x1 - x0), std::max(0, y1 - y0));
+}
+void apply_rects() {
+    static const auto viewport = load<void(GLint, GLint, GLsizei, GLsizei)>("glViewport");
+    static const auto scissor = load<void(GLint, GLint, GLsizei, GLsizei)>("glScissor");
+    apply_rect(viewport, g_viewport);
+    apply_scissor(scissor);
+}
+// On a mapped screen a clear stays inside the area.
+void h_glClear(u32 m) {
+    GL(glClear, void(GLbitfield));
+    if (!screen_mapped() || g_scissor_test) return fn(m);
+    static const auto enable = load<void(GLenum)>("glEnable");
+    static const auto disable = load<void(GLenum)>("glDisable");
+    static const auto scissor = load<void(GLint, GLint, GLsizei, GLsizei)>("glScissor");
+    const auto& a = gles::g_area;
+    scissor(a.x, a.y, a.w, a.h);
+    enable(GL_SCISSOR_TEST);
+    fn(m);
+    disable(GL_SCISSOR_TEST);
+    apply_scissor(scissor);
 }
 void h_glScissor(int x, int y, int w, int h) {
     GL(glScissor, void(GLint, GLint, GLsizei, GLsizei));
     g_scissor = {x, y, w, h, true};
-    apply_rect(fn, g_scissor);
+    apply_scissor(fn);
 }
 void h_glViewport(int x, int y, int w, int h) {
     GL(glViewport, void(GLint, GLint, GLsizei, GLsizei));
@@ -142,16 +186,15 @@ void h_glGetIntegerv(u32 p, u32 out) {
     fn(p, v);
     // Viewport and scissor read back as the game set them.
     const Rect& r = p == GL_VIEWPORT ? g_viewport : g_scissor;
-    if ((p == GL_VIEWPORT || p == GL_SCISSOR_BOX) && r.set && gles::screen_scale() != 1)
+    if ((p == GL_VIEWPORT || p == GL_SCISSOR_BOX) && r.set && gles::g_area.mapped())
         v[0] = r.x, v[1] = r.y, v[2] = r.w, v[3] = r.h;
 }
 void h_glReadPixels(int x, int y, int w, int h, u32 f, u32 t, u32 p) {
     GL(glReadPixels, void(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*));
-    const float k = g_on_screen ? gles::screen_scale() : 1;
-    if (k == 1 || f != GL_RGBA || t != GL_UNSIGNED_BYTE || w <= 0 || h <= 0) return fn(x, y, w, h, f, t, W(p));
-    // On the scaled screen: the matching surface area, resampled to w x h.
-    const int x0 = int(std::lround(x * k)), y0 = int(std::lround(y * k));
-    const int sw = std::max(1, int(std::lround((x + w) * k)) - x0), sh = std::max(1, int(std::lround((y + h) * k)) - y0);
+    if (!screen_mapped() || f != GL_RGBA || t != GL_UNSIGNED_BYTE || w <= 0 || h <= 0) return fn(x, y, w, h, f, t, W(p));
+    // On the mapped screen: the matching surface area, resampled to w x h.
+    const Rect s = to_surface(x, y, w, h);
+    const int x0 = s.x, y0 = s.y, sw = std::max(1, s.w), sh = std::max(1, s.h);
     std::vector<uint32_t> src(size_t(sw) * sh);
     GLint pack = 4;
     static const auto get = load<void(GLenum, GLint*)>("glGetIntegerv");
@@ -310,24 +353,20 @@ void h_glCompressedTexImage2D(u32 t, int level, u32 ifmt, int w, int h, int bord
 
 void h_glCopyTexImage2D(u32 t, int level, u32 ifmt, int x, int y, int w, int h, int border) {
     GL(glCopyTexImage2D, void(GLenum, GLint, GLenum, GLint, GLint, GLsizei, GLsizei, GLint));
-    const float k = g_on_screen ? gles::screen_scale() : 1;
-    if (k == 1) return fn(t, level, ifmt, x, y, w, h, border);
-    // On the scaled screen: the matching surface area, a texture larger or smaller
+    if (!screen_mapped()) return fn(t, level, ifmt, x, y, w, h, border);
+    // On the mapped screen: the matching surface area, a texture larger or smaller
     // by the scale; coordinates relative to its size stay the same.
-    const int x0 = int(std::lround(x * k)), y0 = int(std::lround(y * k));
-    fn(t, level, ifmt, x0, y0, int(std::lround((x + w) * k)) - x0, int(std::lround((y + h) * k)) - y0, border);
+    const Rect s = to_surface(x, y, w, h);
+    fn(t, level, ifmt, s.x, s.y, s.w, s.h, border);
 }
 
 // ---- framebuffers
 void h_glBindFramebuffer(u32 t, u32 f) {
     GL(glBindFramebuffer, void(GLenum, GLuint));
     fn(t, f);
-    if (gles::screen_scale() == 1 || (f == 0) == g_on_screen) return;
+    if ((f == 0) == g_on_screen) return;
     g_on_screen = f == 0;
-    static const auto viewport = load<void(GLint, GLint, GLsizei, GLsizei)>("glViewport");
-    static const auto scissor = load<void(GLint, GLint, GLsizei, GLsizei)>("glScissor");
-    apply_rect(viewport, g_viewport);
-    apply_rect(scissor, g_scissor);
+    if (gles::g_area.mapped()) apply_rects();
 }
 void h_glBindRenderbuffer(u32 t, u32 r) { GL(glBindRenderbuffer, void(GLenum, GLuint)); fn(t, r); }
 void h_glGenFramebuffers(int n, u32 ids) { GL(glGenFramebuffers, void(GLsizei, GLuint*)); fn(n, static_cast<GLuint*>(W(ids))); }
@@ -421,3 +460,41 @@ REG(glUniform1f); REG(glUniform1i); REG(glUniform4f); REG(glUniformMatrix4fv);
 
 }  // namespace
 }  // namespace recomp::hle
+
+namespace recomp::gles {
+
+void set_screen_area(int x, int y, int width, int height, float scale) {
+    g_area = {x, y, width, height, scale > 0 ? scale : 1};
+    if (hle::g_on_screen) hle::apply_rects();
+}
+
+void clear_outside_screen(int surface_width, int surface_height) {
+    const ScreenArea& a = g_area;
+    if (!a.mapped() || a.w <= 0 || (a.w >= surface_width && a.h >= surface_height)) return;
+    static const auto get = hle::load<void(GLenum, GLint*)>("glGetIntegerv");
+    static const auto getf = hle::load<void(GLenum, GLfloat*)>("glGetFloatv");
+    static const auto getb = hle::load<void(GLenum, GLboolean*)>("glGetBooleanv");
+    static const auto bind = hle::load<void(GLenum, GLuint)>("glBindFramebuffer");
+    static const auto enable = hle::load<void(GLenum)>("glEnable");
+    static const auto disable = hle::load<void(GLenum)>("glDisable");
+    static const auto mask = hle::load<void(GLboolean, GLboolean, GLboolean, GLboolean)>("glColorMask");
+    static const auto color = hle::load<void(GLfloat, GLfloat, GLfloat, GLfloat)>("glClearColor");
+    static const auto clear = hle::load<void(GLbitfield)>("glClear");
+    GLint fb = 0;
+    GLfloat c[4];
+    GLboolean m[4];
+    get(GL_FRAMEBUFFER_BINDING, &fb);
+    getf(GL_COLOR_CLEAR_VALUE, c);
+    getb(GL_COLOR_WRITEMASK, m);
+    if (fb) bind(GL_FRAMEBUFFER, 0);
+    if (hle::g_scissor_test) disable(GL_SCISSOR_TEST);
+    mask(1, 1, 1, 1);
+    color(0, 0, 0, 1);
+    clear(GL_COLOR_BUFFER_BIT);
+    color(c[0], c[1], c[2], c[3]);
+    mask(m[0], m[1], m[2], m[3]);
+    if (hle::g_scissor_test) enable(GL_SCISSOR_TEST);
+    if (fb) bind(GL_FRAMEBUFFER, GLuint(fb));
+}
+
+}  // namespace recomp::gles

@@ -24,6 +24,11 @@
 
 namespace slingshot {
 
+// A rectangle on the surface, in pixels from the top left.
+struct SurfaceRect {
+    float x, y, width, height;
+};
+
 struct ModContext {
     AndroidInput& input;
     SDL_Window* window;
@@ -31,6 +36,7 @@ struct ModContext {
     float pixel_density;  // surface pixels per window coordinate (SDL event positions)
     uint64_t now_ns;      // SDL_GetTicksNS() of the current frame
     float screen_scale;   // surface pixels per game pixel (screen_scale of a mod, else 1)
+    SurfaceRect screen;   // where the game's screen is (the whole surface unless screen_aspect bars it)
 };
 
 class Mod {
@@ -46,6 +52,10 @@ public:
     // per game pixel, or 0 to leave the size alone. The game then sees a screen of
     // the display's size divided by it and is drawn scaled to the surface.
     virtual float screen_scale(int width, int height, float dpi) { return 0; }
+    // Called when the window's size or fullscreen state changes: the width / height
+    // ratio the game's screen is held at, or 0 for the window's own. The screen is
+    // then centred in the window with black bars.
+    virtual float screen_aspect(bool fullscreen) { return 0; }
 };
 
 struct ModInfo {

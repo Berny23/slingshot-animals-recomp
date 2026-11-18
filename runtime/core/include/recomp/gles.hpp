@@ -16,10 +16,14 @@ void set_loader(Loader loader);
 // strings read as OpenGL ES 2.0. Call after making the context current.
 void set_desktop_gl(bool desktop);
 bool desktop_gl();
-// Host pixels per game pixel on the screen (framebuffer 0): the game draws for a
-// screen of the window's size divided by `scale`, and its viewport and scissor
-// there are scaled to the window. 1 by default.
-void set_screen_scale(float scale);
+// Where the game's screen (framebuffer 0) is on the surface: x, y, width, height
+// in surface pixels (y from the bottom, as in GL) and surface pixels per game
+// pixel. The game draws for a screen of width x height divided by `scale`; its
+// viewport, scissor, clears and read-backs there are mapped to the area. By
+// default the whole surface at scale 1 (width 0: the whole surface).
+void set_screen_area(int x, int y, int width, int height, float scale);
+// Clears the surface outside the area black; call before the game draws a frame.
+void clear_outside_screen(int surface_width, int surface_height);
 // A GLSL ES 1.00 shader as the host context compiles it.
 std::string host_shader(const std::string& es_source);
 

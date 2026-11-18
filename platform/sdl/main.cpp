@@ -80,7 +80,28 @@ struct NativeApp {
         state = State::RenderReady;
     }
     void resize(int w, int h) {
-        if (state != State::Exiting) call("nativeResize", {uint32_t(w), uint32_t(h)});
+        if (state == State::Exiting) return;
+        call("nativeResize", {uint32_t(w), uint32_t(h)});
+        resolution_changed();
+    }
+    // Stella's nativeResize only resizes the GL context. The game takes the new size
+    // (Lua's screenWidth/screenHeight, which its scripts watch to lay out again) in
+    // the virtual framework::App::resolutionChanged(), which its Android shell never calls.
+    void resolution_changed() {
+        static const uint32_t get = recomp::lib_symbol("_ZN9framework3App3getEv");
+        // Its offset in the vtable: where the base class has its empty implementation.
+        static const int slot = [] {
+            const uint32_t vtable = recomp::lib_symbol("_ZTVN9framework3AppE");
+            const uint32_t base = recomp::lib_symbol("_ZN9framework3App17resolutionChangedEv");
+            if (!vtable || !base) return -1;
+            for (uint32_t off = 0; off < 0x100; off += 4)
+                if ((recomp::ld32(vtable + 8 + off) & ~1u) == (base & ~1u)) return int(off);
+            return -1;
+        }();
+        if (!get || slot < 0) return;
+        jni::NativeFrame frame;
+        if (const uint32_t app = recomp::guest_call(get))
+            recomp::guest_call(recomp::ld32(recomp::ld32(app) + uint32_t(slot)), {app});
     }
     // doUpdate(): false when the game wants to exit.
     bool update() {
@@ -411,6 +432,28 @@ int run(int argc, char** argv) {
     }
     recomp::gles::set_loader(gl_loader);
     recomp::gles::set_desktop_gl(desktop_gl);
+    // Where the game's screen is on the surface (pixels from the top left): the whole
+    // surface, or centred at the aspect ratio a mod holds it at.
+    struct Screen {
+        int x, y, w, h;
+    };
+    const auto screen_area = [&](int sw, int sh) {
+        const bool full = SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN;
+        float aspect = 0;
+        for (auto& m : mods)
+            if (const float a = m->screen_aspect(full); a > 0) aspect = a;
+        Screen s{0, 0, sw, sh};
+        if (aspect > 0 && sw > 0 && sh > 0) {
+            if (float(sw) / float(sh) > aspect) s.w = std::min(sw, int(std::lround(sh * aspect)));
+            else s.h = std::min(sh, int(std::lround(sw / aspect)));
+            s.x = (sw - s.w) / 2;
+            s.y = (sh - s.h) / 2;
+        }
+        return s;
+    };
+    int w = 0, h = 0;
+    SDL_GetWindowSizeInPixels(window, &w, &h);
+    Screen screen = screen_area(w, h);
     // Surface pixels per game pixel: a mod may have the game drawn for a smaller or
     // larger screen and scaled to the surface.
     float screen_scale = 1;
@@ -420,17 +463,24 @@ int run(int argc, char** argv) {
         if (!android_display(d))
 #endif
         {
-            SDL_GetWindowSizeInPixels(window, &d.width, &d.height);
+            d.width = w;
+            d.height = h;
             d.dpi = 160.0f * SDL_GetWindowDisplayScale(window);
         }
+        if (screen.w != w || screen.h != h) d.width = screen.w, d.height = screen.h;
         for (auto& m : mods)
             if (const float s = m->screen_scale(d.width, d.height, d.dpi); s > 0) screen_scale = s;
         d.width = int(std::lround(d.width / screen_scale));
         d.height = int(std::lround(d.height / screen_scale));
         d.dpi /= screen_scale;
-        recomp::gles::set_screen_scale(screen_scale);
         recomp::java::set_display(d);
     }
+    slingshot::AndroidInput input;
+    const auto apply_screen = [&] {
+        recomp::gles::set_screen_area(screen.x, h - screen.y - screen.h, screen.w, screen.h, screen_scale);
+        input.set_screen_area(float(screen.x), float(screen.y), float(screen.w), float(screen.h), screen_scale);
+    };
+    apply_screen();
 
     slingshot::SdlAudio audio;
     recomp::java::set_audio_backend(&audio);
@@ -461,10 +511,18 @@ int run(int argc, char** argv) {
 
     // Renderer.onSurfaceChanged -> Updater.initialize / onResize
     const auto game_px = [&](int v) { return int(std::lround(v / screen_scale)); };
-    int w = 0, h = 0;
-    SDL_GetWindowSizeInPixels(window, &w, &h);
-    app.init(game_px(w), game_px(h));
-    app.resize(game_px(w), game_px(h));
+    app.init(game_px(screen.w), game_px(screen.h));
+    app.resize(game_px(screen.w), game_px(screen.h));
+    // A new surface size or fullscreen state: the screen is laid out again, and the
+    // game told when its size changed.
+    const auto relayout = [&] {
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        const Screen old = screen;
+        screen = screen_area(w, h);
+        apply_screen();
+        if (game_px(screen.w) != game_px(old.w) || game_px(screen.h) != game_px(old.h))
+            app.resize(game_px(screen.w), game_px(screen.h));
+    };
 
     if (!opt.dump_dir.empty()) {
         jni::NativeFrame frame;
@@ -475,8 +533,6 @@ int run(int argc, char** argv) {
         std::_Exit(n < 0 ? 1 : 0);  // the engine is in no state for an orderly shutdown
     }
 
-    slingshot::AndroidInput input;
-    input.set_screen_scale(screen_scale);
     slingshot::SdlInput sdl_input(window, input);
     slingshot::TestScript script(window);
     slingshot::Overlay overlay;
@@ -487,7 +543,8 @@ int run(int argc, char** argv) {
         ++frame;
         if (!script.run_input(frame)) running = false;
         SDL_GetWindowSizeInPixels(window, &w, &h);
-        slingshot::ModContext ctx{input, window, w, h, SDL_GetWindowPixelDensity(window), SDL_GetTicksNS(), screen_scale};
+        slingshot::ModContext ctx{input, window, w, h, SDL_GetWindowPixelDensity(window), SDL_GetTicksNS(), screen_scale,
+                                  {float(screen.x), float(screen.y), float(screen.w), float(screen.h)}};
         SDL_Event e;
         // Paused (minimized): nothing is updated or drawn, so wait for events.
         if (app.state == NativeApp::State::Paused) {
@@ -500,7 +557,9 @@ int run(int argc, char** argv) {
             if (consumed) continue;
             switch (e.type) {
                 case SDL_EVENT_QUIT: running = false; break;
-                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: app.resize(game_px(e.window.data1), game_px(e.window.data2)); break;
+                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+                case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN: relayout(); break;
                 case SDL_EVENT_WINDOW_MINIMIZED:
                 case SDL_EVENT_WILL_ENTER_BACKGROUND: app.pause(); break;
                 case SDL_EVENT_WINDOW_RESTORED:
@@ -517,6 +576,7 @@ int run(int argc, char** argv) {
         watchdog.frame_started();
         recomp::java::run_posted();
         input.deliver();
+        recomp::gles::clear_outside_screen(w, h);
         if (!app.update()) running = false;
         watchdog.frame_finished();
         for (auto& m : mods) m->on_overlay(overlay, ctx);

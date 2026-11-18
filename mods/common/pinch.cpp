@@ -26,7 +26,8 @@ void EmulatedPinch::zoom(float factor, float cx, float cy, uint64_t now_ns) {
 }
 
 void EmulatedPinch::update(ModContext& ctx, uint64_t idle_ns) {
-    const float side = float(std::min(ctx.width, ctx.height));
+    const SurfaceRect& a = ctx.screen;
+    const float side = std::min(a.width, a.height);
     if (!active_) {
         if (pending_ == 0) return;
         if (ctx.input.active_pointers()) {  // the player is touching already
@@ -34,8 +35,8 @@ void EmulatedPinch::update(ModContext& ctx, uint64_t idle_ns) {
             return;
         }
         spread_ = target_ = side * (pending_ > 0 ? kStartSmall : kStartLarge);
-        cx_ = std::clamp(cx_, spread_, ctx.width - spread_);
-        cy_ = std::clamp(cy_, 0.0f, ctx.height - 1.0f);
+        cx_ = std::clamp(cx_, a.x + spread_, a.x + a.width - spread_);
+        cy_ = std::clamp(cy_, a.y, a.y + a.height - 1.0f);
         ids_[0] = ctx.input.pointer_down(cx_ - spread_, cy_);
         ids_[1] = ctx.input.pointer_down(cx_ + spread_, cy_);
         active_ = ids_[0] >= 0 && ids_[1] >= 0;
@@ -53,8 +54,8 @@ void EmulatedPinch::update(ModContext& ctx, uint64_t idle_ns) {
     }
     spread_ += (target_ - spread_) * kFollow;
     if (std::fabs(target_ - spread_) < 0.5f) spread_ = target_;
-    ctx.input.pointer_move(ids_[0], std::max(0.0f, cx_ - spread_), cy_);
-    ctx.input.pointer_move(ids_[1], std::min(ctx.width - 1.0f, cx_ + spread_), cy_);
+    ctx.input.pointer_move(ids_[0], std::max(a.x, cx_ - spread_), cy_);
+    ctx.input.pointer_move(ids_[1], std::min(a.x + a.width - 1.0f, cx_ + spread_), cy_);
 
     const bool settled = spread_ == target_;
     const bool blocked = pending_ != 0;  // at a limit: lift and grip again

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "android_input.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cstdio>
 
@@ -47,6 +48,10 @@ int fallback(int keycode) {
 // MOVE/CANCEL for every pointer of the MotionEvent.
 
 void AndroidInput::touch_event(int action, float x, float y, int id) {
+    if (area_.w > 0) {
+        x = std::clamp(x - area_.x, 0.0f, area_.w - 1);
+        y = std::clamp(y - area_.y, 0.0f, area_.h - 1);
+    }
     x /= screen_scale_;
     y /= screen_scale_;
     queue_.push_back({Event::Touch, action, int(bits(x)), int(bits(y)), id});
