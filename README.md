@@ -2,6 +2,8 @@
 
 <h1 align="center">slingshot-animals-recomp</h1>
 
+<p align="center"><a href="https://recomplauncher.com/game/slingshot-animals-recomp"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a></p>
+
 Unofficial static recompilation of Rovio's old Android *Angry Birds* games. Each game's native ARM library is translated to C++ and runs natively on Linux, Windows, macOS, 64-bit Android and the Nintendo Switch (homebrew), without an emulator.
 
 > [!IMPORTANT]

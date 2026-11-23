@@ -1,6 +1,7 @@
 # Builds Slingshot Builder for Linux, Windows and macOS when a version tag
 # (v1.0.0, ...) is pushed, and attaches the packages to the GitHub release.
-# Each package carries the repository sources (source/) the games are built from.
+# Each package carries the repository sources (source/) the games are built from,
+# and recomplauncher.json next to the program (in the AppImage at its root).
 name: Release
 
 on:
@@ -100,6 +101,7 @@ jobs:
           chmod +x linuxdeploy linuxdeploy-plugin-qt
           mkdir -p AppDir/usr/share/slingshot-builder
           cp -r sources AppDir/usr/share/slingshot-builder/source
+          cp recomplauncher.json AppDir/
           # SDL3 with every backend, for game builds without development packages
           cmake -S platform/linux/sdl3 -B sdl3-build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build sdl3-build
@@ -129,10 +131,13 @@ jobs:
           cp out/slingshot-builder.exe "$dir/"
           windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw "$dir/slingshot-builder.exe"
           cp -r sources "$dir/source"
-          # One file: the launcher with the folder appended as a zip
+          cp recomplauncher.json "$dir/"
+          # One file: the launcher with the folder appended as a zip; the zip
+          # itself for RecompLauncher
           7z a -tzip -mm=Deflate -mx=9 builder.zip "$dir"
           mkdir dist
           cat out/slingshot-builder-launcher.exe builder.zip > "dist/slingshot-builder-${{ matrix.package }}.exe"
+          mv builder.zip "dist/slingshot-builder-${{ matrix.package }}.zip"
 
       - name: Package (macOS app)
         if: runner.os == 'macOS'
@@ -141,8 +146,10 @@ jobs:
           macdeployqt "$app"
           cp -R sources "$app/Contents/Resources/source"
           codesign --force --deep --sign - "$app"
-          mkdir dist
-          ditto -c -k --keepParent "$app" "dist/slingshot-builder-${{ matrix.package }}.zip"
+          mkdir dist package
+          ditto "$app" "package/Slingshot Builder.app"
+          cp recomplauncher.json package/
+          ditto -c -k package "dist/slingshot-builder-${{ matrix.package }}.zip"
 
       - uses: actions/upload-artifact@v7
         with:

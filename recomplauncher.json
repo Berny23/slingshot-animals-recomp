@@ -1,0 +1,333 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "Slingshot Animals Recomp",
+  "repo": "Berny23/slingshot-animals-recomp",
+  "inputs": [
+    {
+      "id": "apk-classic",
+      "label": "Your Angry Birds Classic APK: version 8.0.3 (build 8031), package com.rovio.angrybirds, with the armeabi-v7a library.",
+      "formats": [
+        {
+          "type": "file",
+          "extensions": [
+            "apk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "apk-seasons",
+      "label": "Your Angry Birds Seasons APK: version 6.6.2 (build 6620), package com.rovio.angrybirdsseasons, with the armeabi-v7a library.",
+      "formats": [
+        {
+          "type": "file",
+          "extensions": [
+            "apk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "apk-rio",
+      "label": "Your Angry Birds Rio APK: version 2.6.13 (build 2676), package com.rovio.angrybirdsrio, with the armeabi-v7a library.",
+      "formats": [
+        {
+          "type": "file",
+          "extensions": [
+            "apk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "apk-space",
+      "label": "Your Angry Birds Space HD APK: version 2.2.14 (build 221400), package com.rovio.angrybirdsspaceHD, with the armeabi-v7a library.",
+      "formats": [
+        {
+          "type": "file",
+          "extensions": [
+            "apk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "apk-starwars",
+      "label": "Your Angry Birds Star Wars HD APK: version 1.5.13 (build 151300), package com.rovio.angrybirdsstarwarshd.premium.iap, with the armeabi-v7a library.",
+      "formats": [
+        {
+          "type": "file",
+          "extensions": [
+            "apk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "apk-starwars2",
+      "label": "Your Angry Birds Star Wars II APK: version 1.9.25 (build 192500), package com.rovio.angrybirdsstarwarsii.ads, with the armeabi-v7a library.",
+      "formats": [
+        {
+          "type": "file",
+          "extensions": [
+            "apk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "apk-stella",
+      "label": "Your Angry Birds Stella APK: version 1.1.5 (build 1152), package com.rovio.angrybirdsstella, with the armeabi-v7a library.",
+      "formats": [
+        {
+          "type": "file",
+          "extensions": [
+            "apk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "starwars2-assets",
+      "label": "Star Wars II sounds and theme images (optional): files/assets_service/ from an installation on an Android device, as a ZIP or folder. Without them the game has no music and draws placeholder backgrounds.",
+      "role": "dlc",
+      "optional": true,
+      "formats": [
+        {
+          "type": "file",
+          "extensions": [
+            "zip"
+          ]
+        },
+        {
+          "type": "folder"
+        }
+      ]
+    }
+  ],
+  "start": {
+    "program": [
+      "Slingshot Builder.app",
+      "slingshot-builder.exe",
+      "slingshot-builder-x86_64.AppImage"
+    ],
+    "args": [
+      "--data={data}"
+    ]
+  },
+  "prepare": {
+    "program": [
+      "Slingshot Builder.app",
+      "slingshot-builder.exe",
+      "slingshot-builder-x86_64.AppImage"
+    ],
+    "args": [
+      "--prepare",
+      "--data={data}",
+      "--apk={input:apk-classic}",
+      "--apk={input:apk-seasons}",
+      "--apk={input:apk-rio}",
+      "--apk={input:apk-space}",
+      "--apk={input:apk-starwars}",
+      "--apk={input:apk-starwars2}",
+      "--apk={input:apk-stella}",
+      "--starwars2-assets={input:starwars2-assets}"
+    ],
+    "label": "Building the game from your APK. The first build takes a while.",
+    "done": [
+      "{data}/games/prepared.txt"
+    ]
+  },
+  "games": [
+    {
+      "id": "classic",
+      "name": "Angry Birds Classic",
+      "args": [
+        "--play=classic"
+      ],
+      "inputs": [
+        "apk-classic"
+      ],
+      "saves": [
+        "{local}/slingshot-animals-recomp/classic",
+        "{config}/slingshot-animals-recomp/classic",
+        "{home}/Library/Application Support/slingshot-animals-recomp/classic"
+      ]
+    },
+    {
+      "id": "seasons",
+      "name": "Angry Birds Seasons",
+      "args": [
+        "--play=seasons"
+      ],
+      "inputs": [
+        "apk-seasons"
+      ],
+      "saves": [
+        "{local}/slingshot-animals-recomp/seasons",
+        "{config}/slingshot-animals-recomp/seasons",
+        "{home}/Library/Application Support/slingshot-animals-recomp/seasons"
+      ]
+    },
+    {
+      "id": "rio",
+      "name": "Angry Birds Rio",
+      "args": [
+        "--play=rio"
+      ],
+      "inputs": [
+        "apk-rio"
+      ],
+      "saves": [
+        "{local}/slingshot-animals-recomp/rio",
+        "{config}/slingshot-animals-recomp/rio",
+        "{home}/Library/Application Support/slingshot-animals-recomp/rio"
+      ]
+    },
+    {
+      "id": "space",
+      "name": "Angry Birds Space HD",
+      "args": [
+        "--play=space"
+      ],
+      "inputs": [
+        "apk-space"
+      ],
+      "saves": [
+        "{local}/slingshot-animals-recomp/space",
+        "{config}/slingshot-animals-recomp/space",
+        "{home}/Library/Application Support/slingshot-animals-recomp/space"
+      ]
+    },
+    {
+      "id": "starwars",
+      "name": "Angry Birds Star Wars HD",
+      "args": [
+        "--play=starwars"
+      ],
+      "inputs": [
+        "apk-starwars"
+      ],
+      "saves": [
+        "{local}/slingshot-animals-recomp/starwars",
+        "{config}/slingshot-animals-recomp/starwars",
+        "{home}/Library/Application Support/slingshot-animals-recomp/starwars"
+      ]
+    },
+    {
+      "id": "starwars2",
+      "name": "Angry Birds Star Wars II",
+      "args": [
+        "--play=starwars2"
+      ],
+      "inputs": [
+        "apk-starwars2",
+        "starwars2-assets"
+      ],
+      "saves": [
+        "{local}/slingshot-animals-recomp/starwars2",
+        "{config}/slingshot-animals-recomp/starwars2",
+        "{home}/Library/Application Support/slingshot-animals-recomp/starwars2"
+      ]
+    },
+    {
+      "id": "stella",
+      "name": "Angry Birds Stella",
+      "args": [
+        "--play=stella"
+      ],
+      "inputs": [
+        "apk-stella"
+      ],
+      "saves": [
+        "{local}/slingshot-animals-recomp/stella",
+        "{config}/slingshot-animals-recomp/stella",
+        "{home}/Library/Application Support/slingshot-animals-recomp/stella"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "id": "fullscreen",
+      "label": "Start in",
+      "group": "Display",
+      "in": "args",
+      "help": "F11 switches between window and fullscreen while playing.",
+      "choices": [
+        {
+          "label": "Window",
+          "args": []
+        },
+        {
+          "label": "Fullscreen",
+          "args": [
+            "--mod-option",
+            "fullscreen.start=1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aspect",
+      "label": "Fullscreen shape",
+      "group": "Display",
+      "in": "args",
+      "help": "16:9 keeps the game's shape on ultrawide screens, with black bars at the sides.",
+      "choices": [
+        {
+          "label": "Fill the screen",
+          "args": []
+        },
+        {
+          "label": "16:9",
+          "args": [
+            "--mod-option",
+            "fullscreen.aspect=16:9"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mods",
+      "label": "Mods",
+      "group": "Game",
+      "in": "args",
+      "help": "The original game has no keyboard or gamepad play and no offline versions of the online features.",
+      "choices": [
+        {
+          "label": "All mods",
+          "args": []
+        },
+        {
+          "label": "Original game",
+          "args": [
+            "--no-mods"
+          ]
+        }
+      ]
+    }
+  ],
+  "folders": {
+    "logs": [
+      {
+        "path": "{data}/logs"
+      }
+    ]
+  },
+  "exit_codes": {
+    "3": "This game isn't built yet. Set it up again on its page."
+  },
+  "looks": {
+    "allowed": false,
+    "reason": "The game is built on your PC into its own folder, so looks can't be added to it."
+  },
+  "system": {
+    "windows": {
+      "version": "10"
+    },
+    "linux": {
+      "glibc": "2.35"
+    }
+  }
+}
