@@ -1,5 +1,6 @@
-# Builds Slingshot Builder for Linux, Windows and macOS when a version tag
-# (v1.0.0, ...) is pushed, and attaches the packages to the GitHub release.
+# Builds Slingshot Builder for Linux (AppImage and tarball), Windows and macOS
+# when a version tag (v1.0.0, ...) is pushed, and attaches the packages to the
+# GitHub release.
 # Each package carries the repository sources (source/) the games are built from,
 # and recomplauncher.json next to the program (in the AppImage at its root).
 name: Release
@@ -87,7 +88,7 @@ jobs:
           git archive --format=tar HEAD | tar -x -C sources
           rm -rf sources/.github
 
-      - name: Package (Linux AppImage)
+      - name: Package (Linux AppImage and tarball)
         if: runner.os == 'Linux'
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -122,6 +123,9 @@ jobs:
           test -e AppDir/.DirIcon
           test -e "$OUTPUT.zsync"
           mkdir dist && mv "$OUTPUT" "$OUTPUT.zsync" dist/
+          # The same folder as a tarball (RecompLauncher installs it where an AppImage cannot be unpacked)
+          mv AppDir slingshot-builder
+          tar -cJf dist/slingshot-builder-linux-x86_64.tar.xz slingshot-builder
 
       - name: Package (Windows exe)
         if: runner.os == 'Windows'

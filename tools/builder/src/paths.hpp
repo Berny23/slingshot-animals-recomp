@@ -24,6 +24,8 @@ QString sync_sources(QString& error);
 // --data=<dir>: everything below goes into <dir> (cache/, logs/, builder/).
 void set_data_root(const QString& dir);
 QString data_root();
+// The cache somewhere else than <data root>/cache (a shorter path to it).
+void set_cache_dir(const QString& dir);
 
 // Downloaded tools and build directories; "Clear cache" deletes it. Short on
 // Windows (path length limit of some tools).

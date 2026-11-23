@@ -11,9 +11,12 @@
 //
 // The progress is the mean of stars, Mighty Falcon feathers, droid levels and
 // achievements.
+//
+// The achievements also go to Recomp Achievements (common/recomp_achievements.hpp).
 #include <string>
 
 #include "common/game_scripts.hpp"
+#include "common/recomp_achievements.hpp"
 #include "common/statistics.hpp"
 #include "mod.hpp"
 
@@ -177,6 +180,30 @@ function achievementsFrameUpdate(...)
     end
     return frame_update(...)
 end
+
+-- Recomp Achievements (common/recomp_achievements.hpp): the episodes completed
+-- lead to Beaten, the last one is its win; Path of the Jedi (bought, or with
+-- offline-shop) and the Mighty Falcon's are bonus ones.
+local STORY = {["That's No Moon"] = 'progression', ['Disturbing Misobedience'] = 'progression',
+               ['Transport Is Away'] = 'progression', ['Meet you at the rendezvous'] = 'progression',
+               ['The shield is down'] = 'progression', ['Smash the Empire'] = 'win'}
+local BONUS = {['Courage Of Jedi'] = true, ['Dagobah - War for the Stars'] = true,
+               ['Dagobah - Power of the Force'] = true, ['Dangerous It Will Be'] = true, ['Mighty Launch'] = true,
+               ['Falcon Escape'] = true, ['Hyper Space'] = true}
+local POINTS = {
+    ['Smash the Empire'] = 25, ['Dangerous It Will Be'] = 5, ['Mighty Launch'] = 5, ['Hyper Space'] = 25,
+    ['Probe Explorer'] = 5, ['Probe Gatherer'] = 25, ['Prominent Jedi'] = 5, ['Target Shooter'] = 5,
+    ['Imperial Entanglement'] = 5, ['Banging Heads'] = 5, ['Jedi Knight'] = 25, ['Jedi Master'] = 50,
+    ['Star Bird Fan'] = 5, ['Star Bird Addict'] = 25,
+}
+local recomp = {}
+for _, a in ipairs(list) do
+    local points = POINTS[a.name] or ((a.name:find(' %- War for the Stars$') or a.name:find(' %- Power of the Force$')) and 25) or 10
+    recomp[#recomp + 1] = {name = a.name, type = STORY[a.name], points = points, bonus = BONUS[a.name],
+        unlocked = function() return SettingsWrapper:hasAchievement(a.name) end,
+        describe = function() return a.name, (gameStatisticsDescribe(a)) end}
+end
+_G.slingshotAchievements = recomp
 )";
 
 // The menu scripts reach the standard library through _G.
@@ -496,6 +523,7 @@ public:
     GameStatistics() {
         using slingshot::mods::append_lua;
         append_lua("data/scripts/achievementsLogic.lua", kAchievements);
+        slingshot::mods::report_achievements();
         append_lua("data/scripts/menus/main_menu.lua", std::string(kLocals) + slingshot::mods::kStatisticsLua + kPage);
     }
 };

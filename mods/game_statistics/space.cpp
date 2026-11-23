@@ -13,9 +13,12 @@
 // (each episode's feather level included), eggsteroids and achievements. Danger
 // Zone counts once it can be opened (offline-shop, or bought before), Kellogg's
 // while it is available.
+//
+// The achievements also go to Recomp Achievements (common/recomp_achievements.hpp).
 #include <string>
 
 #include "common/game_scripts.hpp"
+#include "common/recomp_achievements.hpp"
 #include "common/statistics.hpp"
 #include "mod.hpp"
 
@@ -291,6 +294,34 @@ function gameStatisticsAchievementName(achievement)
     end
     return achievement.name
 end
+
+-- Recomp Achievements (common/recomp_achievements.hpp): the bosses lead to Beaten,
+-- the last one is its win; the ones offline-shop or Danger Zone give are bonus ones.
+local BOSSES = {VEGETABLES_OF_VENGEANCE = 'progression', HANDY_MAN = 'progression', THE_BIG_BURP = 'progression',
+                CURIOSITY_KILLED_THE_PIG = 'progression', SUBTASTIC = 'progression', SHATTERED_DREAMS = 'win'}
+local POINTS = {
+    PROFESSIONAL_LEVEL = 5, STARMAN = 25, COSMIC_DISCOVERY = 5, EGGSTEROID_HUNTER = 25, COSMIC_FEATHER = 5,
+    FEATHER_PICKER = 25, SHATTERED_DREAMS = 25, BIRDS_OF_COURAGE = 25, ABSOLUTE_ZERO = 5, BANGING_HEADS = 5,
+    CENTRIPETAL_FORCE = 5, SMASH_MANIAC = 25, MENU_POPPER = 5, NAME_POPPER = 5, SPACE_BIRD_FAN = 5,
+    SPACE_BIRD_ADDICT = 25,
+}
+local recomp = {}
+for _, key in ipairs(ORDER) do
+    local function entry()
+        local data = GameAchievements and GameAchievements[key]
+        return data and {key = key, data = data}
+    end
+    local points = POINTS[key] or ((key:find('_TOTAL_DESTRUCTION$') or key:find('_SCORE_ADDICT$')) and 25) or 10
+    recomp[#recomp + 1] = {key = key:lower(), type = BOSSES[key], points = points, bonus = SHOP[key] ~= nil,
+        unlocked = function() local a = entry() return a ~= nil and unlocked(a) end,
+        describe = function()
+            local a = entry()
+            if not a then return key, '' end
+            local name, d = describe(a)
+            return name, d
+        end}
+end
+_G.slingshotAchievements = recomp
 
 local function parts()
     local list = {}
@@ -576,6 +607,7 @@ public:
         using slingshot::mods::append_lua;
         append_lua("data/scripts/AchievementsLogic.lua", kBanner);
         append_lua("data/scripts/menu/MainMenu.lua", std::string(slingshot::mods::kStatisticsLua) + kPage);
+        slingshot::mods::report_achievements();
     }
 };
 

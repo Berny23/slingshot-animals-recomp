@@ -19,9 +19,12 @@
 // be had: 12 come only with offline-shop, or with offline-tournament from the
 // journal's last milestone. Left out: the paid Tea Party and Ham Dunk team
 // levels unless offline-shop sells them or they are bought.
+//
+// The achievements also go to Recomp Achievements (common/recomp_achievements.hpp).
 #include <string>
 
 #include "common/game_scripts.hpp"
+#include "common/recomp_achievements.hpp"
 #include "common/statistics.hpp"
 #include "mod.hpp"
 
@@ -201,6 +204,27 @@ end
 local BY_NAME = {}
 for _, a in ipairs(ACHIEVEMENTS) do BY_NAME[a.name] = a end
 local function unlocked(a) return settingsWrapper:isAchievementAlreadyUnlocked(a.name) end
+
+-- Recomp Achievements (common/recomp_achievements.hpp): the episodes cleared
+-- lead to Beaten, the last of them is its win; the Mighty Eagle's are bonus ones.
+local CLEARED = {}
+for _, name in ipairs({"Pork O'Lantern", 'Ominous Oinker', 'Haunted Ham', 'Holiday Spirit',
+        "All's Fair in Love and War", "It's all Hunky Dory!", 'Hardboiled Egg', 'Oh, Those Summer Nights',
+        'Bright Side of the Moon', 'Eggxorcist', 'Merry Happy!', 'ABRA-CA-BACON'}) do
+    CLEARED[name] = 'progression'
+end
+CLEARED['ABRA-CA-BACON'] = 'win'
+local POINTS = {['Smash Maniac'] = 25, ['The Grinch'] = 25, ['All Around the Globe'] = 5,
+                ['Aquiline Benefactor'] = 5, ['Feather Collector'] = 25, ['Feather Gatherer'] = 50}
+local recomp = {}
+for _, a in ipairs(ACHIEVEMENTS) do
+    local kind = CLEARED[a.name]
+    local points = POINTS[a.name] or ((kind == 'win' or a.name:find(' %- Total Destruction$') or a.name:find(' %- Score Addict$')) and 25) or 10
+    recomp[#recomp + 1] = {name = a.name, type = kind, points = points, bonus = a.eagle,
+        unlocked = function() return unlocked(a) end,
+        describe = function() return a.name, (a.describe()) end}
+end
+_G.slingshotAchievements = recomp
 
 -- offline-tournament: the Pig Challenge's number of weeks.
 local function tournament_weeks() return offlineTournamentWeeks and offlineTournamentWeeks() or 0 end
@@ -584,6 +608,7 @@ public:
     GameStatistics() {
         slingshot::mods::append_lua("data/scripts/gamelogic.lua", kCounters);
         slingshot::mods::append_lua("data/scripts/menus/main_menu.lua", std::string(slingshot::mods::kStatisticsLua) + kPage);
+        slingshot::mods::report_achievements();
     }
 };
 

@@ -110,7 +110,8 @@
     "program": [
       "Slingshot Builder.app",
       "slingshot-builder.exe",
-      "slingshot-builder-x86_64.AppImage"
+      "slingshot-builder-x86_64.AppImage",
+      "AppRun"
     ],
     "args": [
       "--data={data}"
@@ -120,7 +121,8 @@
     "program": [
       "Slingshot Builder.app",
       "slingshot-builder.exe",
-      "slingshot-builder-x86_64.AppImage"
+      "slingshot-builder-x86_64.AppImage",
+      "AppRun"
     ],
     "args": [
       "--prepare",
@@ -139,6 +141,9 @@
       "{data}/games/prepared.txt"
     ]
   },
+  "saves": [
+    "{data}/saves"
+  ],
   "games": [
     {
       "id": "classic",
@@ -150,9 +155,7 @@
         "apk-classic"
       ],
       "saves": [
-        "{local}/slingshot-animals-recomp/classic",
-        "{config}/slingshot-animals-recomp/classic",
-        "{home}/Library/Application Support/slingshot-animals-recomp/classic"
+        "{data}/saves/classic"
       ]
     },
     {
@@ -165,9 +168,7 @@
         "apk-seasons"
       ],
       "saves": [
-        "{local}/slingshot-animals-recomp/seasons",
-        "{config}/slingshot-animals-recomp/seasons",
-        "{home}/Library/Application Support/slingshot-animals-recomp/seasons"
+        "{data}/saves/seasons"
       ]
     },
     {
@@ -180,9 +181,7 @@
         "apk-rio"
       ],
       "saves": [
-        "{local}/slingshot-animals-recomp/rio",
-        "{config}/slingshot-animals-recomp/rio",
-        "{home}/Library/Application Support/slingshot-animals-recomp/rio"
+        "{data}/saves/rio"
       ]
     },
     {
@@ -195,9 +194,7 @@
         "apk-space"
       ],
       "saves": [
-        "{local}/slingshot-animals-recomp/space",
-        "{config}/slingshot-animals-recomp/space",
-        "{home}/Library/Application Support/slingshot-animals-recomp/space"
+        "{data}/saves/space"
       ]
     },
     {
@@ -210,9 +207,7 @@
         "apk-starwars"
       ],
       "saves": [
-        "{local}/slingshot-animals-recomp/starwars",
-        "{config}/slingshot-animals-recomp/starwars",
-        "{home}/Library/Application Support/slingshot-animals-recomp/starwars"
+        "{data}/saves/starwars"
       ]
     },
     {
@@ -226,9 +221,7 @@
         "starwars2-assets"
       ],
       "saves": [
-        "{local}/slingshot-animals-recomp/starwars2",
-        "{config}/slingshot-animals-recomp/starwars2",
-        "{home}/Library/Application Support/slingshot-animals-recomp/starwars2"
+        "{data}/saves/starwars2"
       ]
     },
     {
@@ -241,9 +234,7 @@
         "apk-stella"
       ],
       "saves": [
-        "{local}/slingshot-animals-recomp/stella",
-        "{config}/slingshot-animals-recomp/stella",
-        "{home}/Library/Application Support/slingshot-animals-recomp/stella"
+        "{data}/saves/stella"
       ]
     }
   ],
@@ -289,20 +280,361 @@
       ]
     },
     {
-      "id": "mods",
-      "label": "Mods",
-      "group": "Game",
+      "id": "mod-mouse-wheel",
+      "label": "Mouse wheel",
+      "group": "Mods",
       "in": "args",
-      "help": "The original game has no keyboard or gamepad play and no offline versions of the online features.",
+      "help": "Zooms in levels and scrolls menus.",
       "choices": [
         {
-          "label": "All mods",
+          "label": "On",
           "args": []
         },
         {
-          "label": "Original game",
+          "label": "Off",
           "args": [
-            "--no-mods"
+            "--no-mod",
+            "mouse-wheel"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-keyboard",
+      "label": "Keyboard play",
+      "group": "Mods",
+      "in": "args",
+      "help": "Space to aim and shoot, W A S D or arrows to aim, R restarts, P pauses.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "keyboard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-gamepad-pointer",
+      "label": "Gamepad play",
+      "group": "Mods",
+      "in": "args",
+      "help": "The left stick moves a cursor, A taps, triggers zoom, B is Back.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "gamepad-pointer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-tap-to-skip",
+      "label": "Tap to skip",
+      "group": "Mods",
+      "in": "args",
+      "help": "Skips the wait at the end of a level.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "tap-to-skip"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-fullscreen",
+      "label": "Fullscreen",
+      "group": "Mods",
+      "in": "args",
+      "help": "F11 and the display settings above.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "fullscreen"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-phone-scale",
+      "label": "Phone scale",
+      "group": "Mods",
+      "in": "args",
+      "help": "On phones, menus and buttons as large as in the other games. Only in Star Wars.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "phone-scale"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-hide-dead-services",
+      "label": "Hide dead services",
+      "group": "Mods",
+      "in": "args",
+      "help": "Hides buttons and messages of online services that are gone.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "hide-dead-services"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-offline-shop",
+      "label": "Offline shop",
+      "group": "Mods",
+      "in": "args",
+      "help": "Everything once sold for real money can be earned by playing.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "offline-shop"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-game-statistics",
+      "label": "Statistics page",
+      "group": "Mods",
+      "in": "args",
+      "help": "Statistics, achievements and progress to 100 %, also for RecompLauncher achievements.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "game-statistics"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-offline-league",
+      "label": "Offline Mighty League",
+      "group": "Mods",
+      "in": "args",
+      "help": "Mighty League without servers. Only in Classic.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "offline-league"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-offline-tournament",
+      "label": "Offline Pig Challenge",
+      "group": "Mods",
+      "in": "args",
+      "help": "Pig Challenge without servers: weeks open one after another. Only in Seasons.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "offline-tournament"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-composite-audio",
+      "label": "Menu music",
+      "group": "Mods",
+      "in": "args",
+      "help": "Plays the menu music and power-up sounds again. Only in Star Wars, Star Wars II.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "composite-audio"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-offline-assets",
+      "label": "Start without server",
+      "group": "Mods",
+      "in": "args",
+      "help": "Starts without the download server that is gone. Only in Star Wars II.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "offline-assets"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-audio-quality",
+      "label": "Better sound",
+      "group": "Mods",
+      "in": "args",
+      "help": "Stereo sound at 24 kHz, better than on Android. Only in Stella.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "audio-quality"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-seasonal-menu",
+      "label": "Seasonal menu",
+      "group": "Mods",
+      "in": "args",
+      "help": "The main menu shows an episode of the current season. Only in Seasons.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "seasonal-menu"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-offline-clock",
+      "label": "Offline clock",
+      "group": "Mods",
+      "in": "args",
+      "help": "Timed features use the PC's clock. Only in Star Wars II.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "offline-clock"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-missing-translations",
+      "label": "Missing translations",
+      "group": "Mods",
+      "in": "args",
+      "help": "Translates texts the game shows only in English. Only in Rio.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "missing-translations"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-samsung-level",
+      "label": "Samsung content",
+      "group": "Mods",
+      "in": "args",
+      "help": "Content once only on Samsung devices is open everywhere. Only in Space, Star Wars II.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--no-mod",
+            "samsung-level"
           ]
         }
       ]

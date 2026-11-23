@@ -4,13 +4,15 @@
 //
 // Usage: slingshot-<game> [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods]
 //                         [--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>]
-//                         [--dump-scripts <dir>] [game-dir]
+//                         [--data <dir>] [--dump-scripts <dir>] [game-dir]
 //   game-dir holds lib/, assets/ and icon.png from the APK (default: game/ next to the executable, else where the
 //   build extracted it). The mods enabled are the build's default ones (SLINGSHOT_DEFAULT_MODS), or instead those given with
 //   --mod or SLINGSHOT_MODS=name,name ("all" for every mod); --no-mod takes one
 //   away, --no-mods all of them. --mod-option passes a setting to a mod (see
 //   README.md for each mod's). The device locale is --locale, else
 //   SLINGSHOT_LOCALE, else the host's (LC_ALL, LC_MESSAGES, LANG).
+//   --data puts the saves and everything else the game writes into <dir> instead of
+//   the system's place for app data.
 //   --dump-scripts writes the game's scripts and configs, decrypted, into <dir>
 //   and exits.
 #include <SDL3/SDL.h>
@@ -227,6 +229,7 @@ struct Options {
     std::string game_dir = default_game_dir();
     std::vector<std::string> mods;
     std::string locale;
+    std::string data_dir;  // --data
     std::string dump_dir;  // --dump-scripts
 };
 
@@ -281,7 +284,7 @@ void list_mods() {
 
 constexpr char kUsage[] =
     "usage: %s [--help] [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods] "
-    "[--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>] [--dump-scripts <dir>] [game-dir]\n";
+    "[--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>] [--data <dir>] [--dump-scripts <dir>] [game-dir]\n";
 
 // Returns false when the program should exit right away (help, mod list).
 bool parse_args(int argc, char** argv, Options& opt, int& status) {
@@ -318,6 +321,8 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
             slingshot::set_mod_option(mod, arg.substr(dot + 1, eq - dot - 1), arg.substr(eq + 1));
         } else if (!std::strcmp(argv[i], "--locale") && i + 1 < argc) {
             opt.locale = argv[++i];
+        } else if (!std::strcmp(argv[i], "--data") && i + 1 < argc) {
+            opt.data_dir = argv[++i];
         } else if (!std::strcmp(argv[i], "--dump-scripts") && i + 1 < argc) {
             opt.dump_dir = argv[++i];
         } else if (!std::strcmp(argv[i], "--help") || !std::strcmp(argv[i], "-h")) {
@@ -337,14 +342,11 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
         }
     }
     if (!any_chosen) add_mods(recomp::game.default_mods, chosen, true);
+    // A mod this game doesn't have is off already (launchers pass one set of options to every game).
     for (const std::string& r : removed) {
         bool known = false;
         for (const auto& info : slingshot::available_mods()) known |= r == info.name;
-        if (!known) {
-            std::fprintf(stderr, "host: unknown mod '%s' (see --list-mods)\n", r.c_str());
-            status = 1;
-            return false;
-        }
+        if (!known) std::fprintf(stderr, "host: --no-mod %s: no such mod in this game\n", r.c_str());
     }
     for (const std::string& m : none ? std::vector<std::string>{} : chosen) {
         bool dropped = false, seen = false;
@@ -369,6 +371,7 @@ int run(int argc, char** argv) {
         SDL_free(pref);
     }
 #endif
+    if (!opt.data_dir.empty()) recomp::vfs_set_root(opt.data_dir);
     recomp::java::set_locale(recomp::java::parse_locale(opt.locale.empty() ? host_locale() : opt.locale));
 
     // The identifier matches the installed slingshot-<id>.desktop (the taskbar icon on Wayland).
@@ -626,6 +629,11 @@ static void attach_parent_console() {
 int main(int argc, char** argv) {
 #ifdef _WIN32
     attach_parent_console();
+    // Unbuffered: the C runtime here buffers _IOLBF fully
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+#else
+    // Line by line also into a file or pipe, so a log has everything up to a crash
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
 #endif
 #ifdef __SWITCH__
     // Recompiled code needs a large stack: the game runs on a thread with 8 MiB.

@@ -2,22 +2,27 @@
 #include "recomplauncher.hpp"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSet>
+#include <QStandardPaths>
 #include <algorithm>
-#include <cstdio>
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -37,6 +42,9 @@ const QString kExe = "";
 // Exit codes (exit_codes in recomplauncher.json)
 constexpr int kFailed = 1, kUsage = 2, kNotBuilt = 3;
 
+// Game logs kept: <id>.log and the ones before it, <id>-1.log ...
+constexpr int kLogsKept = 5;
+
 void print_progress(double fraction, const QString& text) {
     // QString::number: a decimal point whatever the locale (printf follows LC_NUMERIC)
     std::printf("progress %s %s\n", qPrintable(QString::number(std::clamp(fraction, 0.0, 1.0), 'f', 3)), qPrintable(text));
@@ -49,6 +57,58 @@ void print_error(const QString& text) {
 }
 
 QString game_folder(const QString& id) { return data_root() + "/games/" + id; }
+QString save_folder(const QString& id) { return data_root() + "/saves/" + id; }
+
+// Where the game keeps its saves without --data (platform/sdl/main.cpp, runtime/hle/libc/vfs.cpp).
+QString system_save_folder(const QString& id) {
+#if defined(Q_OS_WIN)
+    return qEnvironmentVariable("APPDATA") + "/slingshot-animals-recomp/" + id;
+#elif defined(Q_OS_MACOS)
+    return QDir::homePath() + "/Library/Application Support/slingshot-animals-recomp/" + id;
+#else
+    const QString xdg = qEnvironmentVariable("XDG_DATA_HOME");
+    return (xdg.isEmpty() ? QDir::homePath() + "/.local/share" : xdg) + "/slingshot-animals-recomp/" + id;
+#endif
+}
+
+bool copy_folder(const QString& from, const QString& to) {
+    QDirIterator it(from, QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString file = it.next();
+        const QString target = to + "/" + QDir(from).relativeFilePath(file);
+        QDir().mkpath(QFileInfo(target).path());
+        if (!QFile::copy(file, target)) return false;
+    }
+    return QDir().mkpath(to);
+}
+
+#ifdef Q_OS_WIN
+// Windows limits most programs to paths of 260 characters, and the build's
+// deepest files (the dependencies' sources) are about 190 below the cache. A
+// cache in a long library folder is reached through a short junction instead:
+// %LOCALAPPDATA%\slingshot\l\<hash>. Junctions whose folder is gone are removed.
+constexpr int kLongCache = 60;
+
+void use_short_cache() {
+    const QString real = QDir::cleanPath(data_root() + "/cache");
+    const QString links = QDir::cleanPath(qEnvironmentVariable("LOCALAPPDATA", QDir::homePath()) + "/slingshot/l");
+    for (const QFileInfo& f : QDir(links).entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::System))
+        if (f.isJunction() && !QFileInfo::exists(f.junctionTarget())) QDir().rmdir(f.absoluteFilePath());
+    if (real.size() <= kLongCache) return;
+    QDir().mkpath(real);
+    const QString hash = QCryptographicHash::hash(real.toLower().toUtf8(), QCryptographicHash::Sha256).toHex().left(8);
+    const QString link = links + "/" + hash;
+    if (!QFileInfo(link).isJunction()) {
+        QDir().mkpath(links);
+        QProcess p;
+        p.setProgram("cmd.exe");
+        p.setNativeArguments(QString("/d /c mklink /J \"%1\" \"%2\"").arg(QDir::toNativeSeparators(link), QDir::toNativeSeparators(real)));
+        p.start();
+        p.waitForFinished(-1);
+    }
+    if (QFileInfo(link).isJunction()) set_cache_dir(link);
+}
+#endif
 
 // What a built game was made from: the builder's version, the game and its extra files.
 QByteArray stamp(const Game& game, const QString& extra) {
@@ -92,6 +152,12 @@ int prepare(const QStringList& apks, const QString& extra) {
         }
         found.push_back(*game);
     }
+#ifdef Q_OS_WIN
+    use_short_cache();
+#endif
+    // The saves' folder exists from the setup on (the launcher looks for it); each game's own
+    // folder only once it is played, which copies saves from before (play).
+    QDir().mkpath(data_root() + "/saves");
     QSet<QString> done;
     for (int i = 0; i < found.size(); ++i) {
         const Game& game = found[i];
@@ -127,18 +193,30 @@ int prepare(const QStringList& apks, const QString& extra) {
             return kFailed;
         }
     }
-    // prepare.done: written after every finished run.
+    // prepare.done: written after every finished run, with every game built so far.
+    QStringList built;
+    for (const QFileInfo& d : QDir(data_root() + "/games").entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
+        if (QFileInfo::exists(d.absoluteFilePath() + "/build.txt")) built << d.fileName();
     QFile prepared(data_root() + "/games/prepared.txt");
-    if (!prepared.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    if (!prepared.open(QIODevice::WriteOnly | QIODevice::Truncate) || prepared.write(built.join('\n').toUtf8() + '\n') < 0) {
         print_error("Cannot write " + QDir::toNativeSeparators(prepared.fileName()));
         return kFailed;
     }
-    prepared.write(QStringList(done.values()).join('\n').toUtf8() + '\n');
     print_progress(1, "Done");
     return 0;
 }
 
-int play(const QString& id, const QStringList& game_args) {
+// <data>/logs/<id>.log for this run; the earlier ones move down to <id>-1.log ...
+QString new_log(const QString& id) {
+    const QString dir = data_root() + "/logs";
+    QDir().mkpath(dir);
+    auto name = [&](int n) { return dir + "/" + id + (n ? QString("-%1").arg(n) : QString()) + ".log"; };
+    QFile::remove(name(kLogsKept - 1));
+    for (int n = kLogsKept - 2; n >= 0; --n) QFile::rename(name(n), name(n + 1));
+    return name(0);
+}
+
+int play(const QString& id, QStringList game_args) {
     if (!QRegularExpression("^[a-z0-9]+$").match(id).hasMatch()) {
         print_error("Unknown game '" + id + "'.");
         return kUsage;
@@ -148,10 +226,21 @@ int play(const QString& id, const QStringList& game_args) {
         print_error(QDir::toNativeSeparators(exe) + " is not built yet.");
         return kNotBuilt;
     }
+    // The saves go with the launcher's folder; saves the game had before are copied there once.
+    const QString saves = save_folder(id);
+    if (!QFileInfo::exists(saves)) {
+        const QString before = system_save_folder(id);
+        if (QFileInfo(before).isDir() && !copy_folder(before, saves))
+            print_error("Cannot copy the saves from " + QDir::toNativeSeparators(before));
+    }
+    game_args.prepend(QDir::toNativeSeparators(saves));
+    game_args.prepend("--data");
+    const QString log = new_log(id);
 #ifdef Q_OS_WIN
     // The game ends with this process (a job object closed with it).
     QProcess p;
-    p.setProcessChannelMode(QProcess::ForwardedChannels);
+    p.setProcessChannelMode(QProcess::MergedChannels);
+    p.setStandardOutputFile(log, QIODevice::Truncate);
     p.setInputChannelMode(QProcess::ForwardedInputChannel);
     p.start(exe, game_args);
     if (!p.waitForStarted(-1)) {
@@ -171,12 +260,20 @@ int play(const QString& id, const QStringList& game_args) {
     return p.exitStatus() == QProcess::NormalExit ? p.exitCode() : kFailed;
 #else
     // The game replaces this process: the launcher sees it, its signals and its exit code.
+    const int fd = ::open(QFile::encodeName(log).constData(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        std::fflush(nullptr);
+        ::dup2(fd, STDOUT_FILENO);
+        ::dup2(fd, STDERR_FILENO);
+        ::close(fd);
+    }
     QList<QByteArray> native{QFile::encodeName(exe)};
     for (const QString& a : game_args) native << a.toLocal8Bit();
     std::vector<char*> argv;
     for (QByteArray& a : native) argv.push_back(a.data());
     argv.push_back(nullptr);
-    std::fflush(nullptr);
+    std::printf("%s: %s\n", qPrintable(QDateTime::currentDateTime().toString(Qt::ISODate)), qPrintable(QString::fromLocal8Bit(native.join(' '))));
+    std::fflush(stdout);
     execv(argv[0], argv.data());
     print_error("Cannot start " + QDir::toNativeSeparators(exe) + ": " + QString::fromLocal8Bit(std::strerror(errno)));
     return kFailed;

@@ -14,9 +14,12 @@
 //
 // The progress is the mean of stars, golden eggs, feathers, achievements and,
 // with offline-league, the leagues.
+//
+// The achievements also go to Recomp Achievements (common/recomp_achievements.hpp).
 #include <string>
 
 #include "common/game_scripts.hpp"
+#include "common/recomp_achievements.hpp"
 #include "common/statistics.hpp"
 #include "mod.hpp"
 
@@ -145,9 +148,10 @@ local GROUPS = {
 }
 local loaded = {}
 local function load_texts()
+    local path = localizationPath or gamelua.localizationPath
     for _, group in pairs(GROUPS) do
         if not loaded[group] then
-            loaded[group] = pcall(res.createTextGroupSet, localizationPath .. '/' .. group .. '.dat')
+            loaded[group] = pcall(res.createTextGroupSet, path .. '/' .. group .. '.dat')
         end
         if loaded[group] then pcall(res.loadLocale, group, res.getLocale()) end
     end
@@ -222,21 +226,22 @@ local function describe(a)
         return game_text('B', 'ACHIEVEMENT_NAME_' .. a.key) or a.name, game_text('B', 'ACHIEVEMENT_UNLOCKED_' .. a.key) or ''
     elseif a.group then
         local name, info = game_text(a.group, 'ACHIEVEMENT_NAME_' .. a.key), game_text(a.group, 'ACHIEVEMENT_DESCRIPTION_' .. a.key)
-        if name then return name, info or '' end
-        -- episodes 6 to 8: the texts of episode 1 with their numbers
+        if name and info then return name, info end
+        -- episodes 6 to 8 (text or description missing): the texts of episode 1 with their numbers
+        local own = name
         local episode = tonumber(a.key:match('(%d+)$'))
         local first = a.key:gsub('%d+$', '1')
         name, info = game_text(a.group, 'ACHIEVEMENT_NAME_' .. first), game_text(a.group, 'ACHIEVEMENT_DESCRIPTION_' .. first)
         if name and episode then
-            name = name:gsub('%f[%d]1%f[%D]', tostring(episode), 1)
+            name = own or name:gsub('%f[%d]1%f[%D]', tostring(episode), 1)
+            info = (info or ''):gsub('%f[%d]1%f[%D]', tostring(episode), 1)
             if a.group == 'S' then
-                info = (info or ''):gsub('[%d%.,]+%d', number(g_episodes[episode].score_achievement_limit), 1)
-            else
-                info = (info or ''):gsub('%f[%d]1%f[%D]', tostring(episode), 1)
+                -- the score, with its group separators (spaces too)
+                info = info:gsub('%d[%d%.,%s\194\160\226\128\175]*%d', number((g_episodes or gamelua.g_episodes)[episode].score_achievement_limit), 1)
             end
             return name, info
         end
-        return a.name, ''
+        return own or a.name, ''
     elseif a.key then
         return a.name, text('feather_text'):format(number(a.key))
     end
@@ -474,6 +479,25 @@ if not _G.gameStatisticsBanners then  -- (this script runs more than once)
     gamelua.eventManager:addEventListener(gamelua.events.EID_ACHIEVEMENT_UNLOCKED, _G.gameStatisticsBanners)
 end
 
+-- Recomp Achievements (common/recomp_achievements.hpp): the episodes' achievements
+-- lead to Beaten, the last of them (the caves) is its win; the Mighty Eagle's are
+-- bonus ones (offline-shop).
+local POINTS = {
+    ['Star Gatherer'] = 25, ['Egg Hunter'] = 25, ['Feather Collector'] = 25, ['Feather Gatherer'] = 50,
+    ['Aquiline Benefactor'] = 5, ['Smash Maniac'] = 25, ['Angry Birds Fan'] = 5, ['Angry Birds Addict'] = 25,
+}
+local EAGLE = {['Aquiline Benefactor'] = true, ['Feather Picker'] = true, ['Feather Collector'] = true,
+               ['Feather Gatherer'] = true}
+local recomp = {}
+for _, a in ipairs(ACHIEVEMENTS) do
+    local kind = a.group == 'W' and (a.name == 'King of the Caves' and 'win' or 'progression') or nil
+    local points = POINTS[a.name] or ((a.group == 'S' or a.group == 'D' or kind == 'win') and 25) or (a.group == 'B' and 5) or 10
+    recomp[#recomp + 1] = {name = a.name, type = kind, points = points, bonus = EAGLE[a.name],
+        unlocked = function() return unlocked(a) end,
+        describe = function() load_texts() return describe(a) end}
+end
+_G.slingshotAchievements = recomp
+
 -- The button, in place of the "more games" button (top left).
 local init = MainMenu.init
 function MainMenu:init(...)
@@ -506,6 +530,7 @@ public:
     GameStatistics() {
         slingshot::mods::append_lua("data/scripts/gamelogic.lua", kCounters);
         slingshot::mods::append_lua("data/scripts/menus/main_menu.lua", std::string(slingshot::mods::kStatisticsLua) + kPage);
+        slingshot::mods::report_achievements();
     }
 };
 

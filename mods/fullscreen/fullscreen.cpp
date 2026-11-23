@@ -2,9 +2,11 @@
 // fullscreen: F11 toggles fullscreen. The game handles it as a window resize.
 // --mod-option fullscreen.aspect=<w>:<h> holds the game at that aspect ratio in
 // fullscreen (black bars on wider or taller screens); fullscreen.start=1 opens
-// the window in fullscreen.
+// the window in fullscreen, as does RecompLauncher's Big Picture mode
+// (RECOMPLAUNCHER_MODE=bigpicture) unless fullscreen.start=0.
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #include "mod.hpp"
 
@@ -34,7 +36,11 @@ public:
     float screen_aspect(bool fullscreen) override { return fullscreen ? aspect_ : 0; }
     bool start_fullscreen() override {
         const std::string* v = slingshot::mod_option("fullscreen", "start");
-        return v && (*v == "1" || *v == "true" || *v == "yes");
+        if (!v) {
+            const char* mode = std::getenv("RECOMPLAUNCHER_MODE");
+            return mode && std::string(mode) == "bigpicture";
+        }
+        return *v == "1" || *v == "true" || *v == "yes";
     }
 
 private:

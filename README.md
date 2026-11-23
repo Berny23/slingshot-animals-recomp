@@ -45,11 +45,11 @@ All mods are on by default. In the builder, *Advanced* chooses which ones a game
 | `keyboard` | all | Play with the keyboard: hold Space, aim with W A S D or arrows, release to shoot, Space again for the bird's ability (hold it and W A S D or arrows steer aiming abilities); arrows move the camera, + / - zoom, R restarts, P pauses, Enter continues |
 | `gamepad-pointer` | all | Play with a gamepad: the left stick moves a cursor (right stick slowly), A taps, triggers zoom, B is Back |
 | `tap-to-skip` | all | Tap to skip the wait at the end of a level |
-| `fullscreen` | all | F11 toggles fullscreen. `--mod-option fullscreen.start=1` starts in fullscreen, `--mod-option fullscreen.aspect=16:9` keeps the game at 16:9 in fullscreen, with black bars on ultrawide screens |
+| `fullscreen` | all | F11 toggles fullscreen. `--mod-option fullscreen.start=1` starts in fullscreen (also RecompLauncher's Big Picture mode, unless `=0`), `--mod-option fullscreen.aspect=16:9` keeps the game at 16:9 in fullscreen, with black bars on ultrawide screens |
 | `phone-scale` | Star Wars | On phones, menus and buttons are as large as in the other games |
 | `hide-dead-services` | all | Hides buttons and messages of discontinued online services |
 | `offline-shop` | all | Everything sold for real money can be earned by playing |
-| `game-statistics` | all | Statistics page with achievements and progress to 100 % |
+| `game-statistics` | all | Statistics page with achievements and progress to 100 %; the achievements also count in RecompLauncher (Recomp Achievements) |
 | `offline-league` | Classic | Mighty League without servers |
 | `offline-tournament` | Seasons | Pig Challenge without servers: weeks open one after another, all weeks replayable after the last |
 | `composite-audio` | Star Wars, Star Wars II | Plays the menu music and power-up sounds again |
@@ -121,6 +121,7 @@ build/bin/slingshot-<id> [options] [game-dir]
 | `--no-mods` | Original game without mods |
 | `--mod-option <mod>.<key>=<value>` | A setting for a mod (repeatable), see the mod table |
 | `--locale <ll_CC>` | Game language, e.g. `de_DE` |
+| `--data <dir>` | Keep the saves in `<dir>` instead of the folder below |
 | `--dump-scripts <dir>` | Write the game's scripts and configs out decrypted |
 
 Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`) on Linux, `%APPDATA%\slingshot-animals-recomp\<id>\` on Windows, `~/Library/Application Support/slingshot-animals-recomp/<id>/` on macOS and `sdmc:/switch/slingshot-animals-recomp/<id>/` on the Switch; on Android they stay in the app's storage until it is uninstalled. They are encrypted by the game; copy the folder while the game is not running to back them up.

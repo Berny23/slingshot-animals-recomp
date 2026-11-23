@@ -15,9 +15,12 @@
 //
 // The progress is the mean of stars (every level, bonus and reward level),
 // hidden items, Mighty Eagle feathers (with the eagle) and achievements.
+//
+// The achievements also go to Recomp Achievements (common/recomp_achievements.hpp).
 #include <string>
 
 #include "common/game_scripts.hpp"
+#include "common/recomp_achievements.hpp"
 #include "mod.hpp"
 
 namespace {
@@ -354,6 +357,28 @@ function gameStatisticsDescribe(a)
     if type(target) == 'function' then target = target() end
     return text, value, target
 end
+
+-- Recomp Achievements (common/recomp_achievements.hpp): the episodes completed
+-- lead to Beaten, the last of them is its win; the Mighty Eagle's are bonus ones.
+local POINTS = {
+    ['Fruit Salad'] = 25, ['A Star is Born'] = 5, ['Super Star'] = 25, ['Mega Star'] = 25, ['Blue Giant'] = 25,
+    ['Stellarvore'] = 50, ['Bonus Brilliance'] = 25, ['Feather Collector Rio'] = 25, ['Feather Gatherer Rio'] = 50,
+    ['Aquiline Benefactor'] = 5, ['Lights Out'] = 5, ['Block Obliterator'] = 25, ['Marmoset Tormentor'] = 25,
+    ['Marmoset Terminator'] = 50, ['Free Bird'] = 25, ['No Cage Can Hold Me!'] = 50, ['Half-a-Millionaire'] = 5,
+    ['Multi-Millionaire'] = 25, ['Credit Where Credit is Due'] = 5, ['Enthusiastic Player'] = 5,
+}
+local TRICKS = {blue = true, yellow = true, black = true, white = true, rio = true, blu = true, big = true,
+                boomerang = true, globe = true}
+local recomp = {}
+for _, a in ipairs(list) do
+    local kind = a.text == 'complete' and (a.name == 'Bird Paradise' and 'win' or 'progression') or nil
+    local points = POINTS[a.name] or ((kind == 'win' or a.text == 'three_stars' or a.text == 'episode_score') and 25)
+        or (TRICKS[a.text] and 5) or 10
+    recomp[#recomp + 1] = {name = a.name, type = kind, points = points, bonus = a.eagle,
+        unlocked = function() return gameStatisticsUnlocked(a) end,
+        describe = function() return a.name, (gameStatisticsDescribe(a)) end}
+end
+_G.slingshotAchievements = recomp
 
 -- The achievement icons come in one sheet for 480x320 only, which no asset
 -- group loads at this resolution.
@@ -700,6 +725,7 @@ public:
     GameStatistics() {
         using slingshot::mods::append_lua;
         append_lua("data/scripts/gamelogic.lua", kGameLogic);
+        slingshot::mods::report_achievements();
         append_lua("data/scripts/Components.lua", kPage);
         append_lua("data/scripts/menu/MainMenuInitialPage.lua", kMenu);
     }

@@ -10,9 +10,12 @@
 // quest where the game does not offer it (without samsung-level).
 //
 // The progress is the mean of stars (all chapters) and quest levels.
+//
+// The quests also go to Recomp Achievements (common/recomp_achievements.hpp).
 #include <string>
 
 #include "common/game_scripts.hpp"
+#include "common/recomp_achievements.hpp"
 #include "common/statistics.hpp"
 #include "mod.hpp"
 
@@ -343,6 +346,71 @@ function MainMenu:layout(...)
     add_button(self)
     return unpack(results)
 end
+
+-- Recomp Achievements (common/recomp_achievements.hpp): each level of a quest is
+-- one. Completing a chapter's side leads to Beaten, Bird Side's last chapter is
+-- its win; the characters', the paid chapters' and the Samsung quest are bonus
+-- ones (offline-shop, samsung-level).
+local function slug(s) return (tostring(s):lower():gsub('[^%w]+', '_'):gsub('^_+', ''):gsub('_+$', '')) end
+local function localized(t, level)
+    if type(t) ~= 'table' then return t end
+    local v = t[language()] or t.en_EN
+    if type(v) == 'table' then return v[level] or v[#v] end
+    return v
+end
+local function sorted_keys(t)
+    local keys = {}
+    for k in pairs(t or {}) do keys[#keys + 1] = k end
+    table.sort(keys, function(a, b)
+        if type(a) == 'number' and type(b) == 'number' then return a < b end
+        return tostring(a) < tostring(b)
+    end)
+    return keys
+end
+local function recomp_achievements()
+    local data, list = g.g_questDataTable, {}
+    if type(data) ~= 'table' then return end
+    local function add(q, prefix, group, chapter)
+        if q.questType == 'idLogin' then return end
+        local max = g.getQuestMaximumLevel(q.name) or 1
+        for level = 1, max do
+            local kind
+            if q.questType == 'chapterCompleted' and not chapter:find('IAP') and not chapter:find('rebels')
+                and not chapter:find('bonus') then
+                kind = chapter == 'chapter_5_light' and 'win' or 'progression'
+            end
+            local points = 10
+            if max > 1 then points = ({5, 10, 10, 25, 50})[math.min(level, 5)]
+            elseif q.questType == 'chapterScore' or q.questType == 'chapterStars' or kind == 'win' then points = 25
+            elseif group == 'characterQuests' then points = 5 end
+            list[#list + 1] = {
+                key = prefix .. slug(q.name) .. (max > 1 and ('_' .. level) or ''),
+                type = kind, points = points,
+                bonus = group == 'characterQuests' or q.questType == 'samsungAchievement'
+                    or chapter:find('IAP') ~= nil or chapter:find('rebels') ~= nil,
+                unlocked = function()
+                    local w = g.SettingsWrapper
+                    return w:isQuestClaimed(q.name, level) or w:isQuestCompletionNotified(q.name, level)
+                end,
+                describe = function()
+                    if max > 1 then return localized(q.title, level), localized(q.description, level) end
+                    return g.getQuestTitle(q), g.getQuestDescription(q)
+                end}
+        end
+    end
+    for _, chapter in ipairs(sorted_keys(data.chapterQuests)) do
+        for _, q in ipairs(data.chapterQuests[chapter]) do add(q, slug(chapter) .. '_', 'chapterQuests', chapter) end
+    end
+    for _, group in ipairs({'characterQuests', 'overallQuests'}) do
+        for _, k in ipairs(sorted_keys(data[group])) do add(data[group][k], '', group, '') end
+    end
+    _G.slingshotAchievements = list
+end
+local recomp_layout = MainMenu.layout
+function MainMenu:layout(...)
+    if not _G.slingshotAchievements then pcall(recomp_achievements) end
+    return recomp_layout(self, ...)
+end
 )";
 
 class GameStatistics final : public slingshot::Mod {
@@ -350,6 +418,7 @@ public:
     GameStatistics() {
         slingshot::mods::append_lua("data/scripts/menus/main_menu.lua",
                                     std::string(kLocals) + slingshot::mods::kStatisticsLua + kPage);
+        slingshot::mods::report_achievements();
     }
 };
 

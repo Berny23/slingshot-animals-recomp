@@ -5,7 +5,9 @@
 //       "progress <0..1> <text>" lines; a game already built from the same
 //       inputs by this version is kept
 //   slingshot-builder --data=<dir> --play=<id> [game options...]
-//       starts <dir>/games/<id>/slingshot-<id> with the other options
+//       starts <dir>/games/<id>/slingshot-<id> with the other options, its saves
+//       in <dir>/saves/<id> (copied once from the system's place) and its output
+//       in <dir>/logs/<id>.log
 #pragma once
 
 namespace builder {

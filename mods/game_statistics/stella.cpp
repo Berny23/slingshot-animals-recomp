@@ -13,9 +13,12 @@
 //
 // The progress is the mean of stars, bird outfits, collection items and
 // achievements.
+//
+// The achievements also go to Recomp Achievements (common/recomp_achievements.hpp).
 #include <string>
 
 #include "common/game_scripts.hpp"
+#include "common/recomp_achievements.hpp"
 #include "common/statistics.hpp"
 #include "mod.hpp"
 
@@ -443,6 +446,24 @@ local function describe(a)
 end
 local function name(a) return (text(a.id) or {a.id})[1] end
 
+-- Recomp Achievements (common/recomp_achievements.hpp): the chapters completed
+-- lead to Beaten, the last one is its win; Album Maker needs offline-shop's gift
+-- box outfits and is a bonus one.
+local POINTS = {
+    STAR_GAZER = 5, STAR_TREKER = 25, STAR_BOUNDER = 50, COIN_GRABBER = 5, BIG_SPENDER = 25, SNAPSHOT = 5,
+    PAPARAZZI = 25, ALBUM_MAKER = 25, PIG_OUT = 25, TREE_TOP_HIGH_TOTAL_SCORE = 25, BEACH_TOP_COMPLETE = 25,
+    BEACH_HIGH_TOTAL_SCORE = 25, N_THREE_STARRED_LEVELS_2 = 25, PARCOR_KID = 5, HIGH_PLAY_TIME_1 = 5,
+    HIGH_PLAY_TIME_10 = 25, HAMMER_TIME = 5,
+}
+local STORY = {TREE_TOP_COMPLETE = 'progression', BEACH_TOP_COMPLETE = 'win'}
+local recomp = {}
+for _, a in ipairs(LIST) do
+    recomp[#recomp + 1] = {key = a.id:lower(), type = STORY[a.id], points = POINTS[a.id] or 10, bonus = a.gifts,
+        unlocked = function() return unlocked(a) end,
+        describe = function() return name(a), (describe(a)) end}
+end
+_G.slingshotAchievements = recomp
+
 -- The parts of the progress: stars, bird outfits, collection items, achievements.
 local CHAPTERS = {'Chapter01', 'Chapter02'}
 local function outfits()
@@ -774,6 +795,7 @@ public:
         append_lua("data/scripts/gamerservices/Achievements.lua",
                    std::string(slingshot::mods::kStatisticsLua) + kTexts + kLogic);
         append_lua("data/scripts/menus/island/IslandMap.lua", kIsland);
+        slingshot::mods::report_achievements();
     }
 };
 
