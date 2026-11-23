@@ -640,6 +640,26 @@
       ]
     },
     {
+      "id": "mod-unlimited-money",
+      "label": "Unlimited money",
+      "group": "Mods",
+      "in": "args",
+      "help": "Cheat: coins, gems and credits do not run out. Warning: Cheated saves never get RecompLauncher achievements! Only in Classic, Seasons, Rio, Star Wars II, Stella.",
+      "choices": [
+        {
+          "label": "Off",
+          "args": []
+        },
+        {
+          "label": "On",
+          "args": [
+            "--enable-mod",
+            "unlimited-money"
+          ]
+        }
+      ]
+    },
+    {
       "id": "mod-unlock-episodes",
       "label": "Unlock episodes",
       "group": "Mods",

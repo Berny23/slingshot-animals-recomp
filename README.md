@@ -59,6 +59,7 @@ All mods but those marked *(off)* are on by default. In the builder, *Advanced* 
 | `offline-clock` | Star Wars II | Timed features use the device's clock |
 | `missing-translations` | Rio | Translates texts the game shows only in English |
 | `samsung-level` | Space, Star Wars II | Content once given only to Samsung devices is open everywhere |
+| `unlimited-money` *(off)* | Classic, Seasons, Rio, Star Wars II, Stella | Coins, gems and credits do not run out. Warning: Cheated saves never get RecompLauncher achievements |
 | `unlock-episodes` *(off)* | Classic, Seasons, Rio, Star Wars, Star Wars II | Every episode can be played from its first level, without stars, coins or the episodes before it. The levels in it open as usual. Classic and Seasons save the episodes as unlocked |
 
 ## Supported versions

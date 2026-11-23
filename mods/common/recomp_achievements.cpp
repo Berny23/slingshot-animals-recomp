@@ -18,6 +18,7 @@
 #include <unistd.h>
 #endif
 
+#include "common/cheats.hpp"
 #include "common/game_scripts.hpp"
 #include "common/script_link.hpp"
 #include "mod.hpp"
@@ -200,6 +201,7 @@ void report_achievements() {
     recomp::vfs_add_virtual_file(std::string(kPrefix) + "mode", [mode] { return mode; });
     static std::vector<std::string> entries;
     on_script_message(kPrefix, [](const std::string& m) {
+        if ((m == "s" || m[0] == 'e') && save_cheated()) return;
         if (m == "s") {
             channel.send(R"({"t":"save_loaded"})");
         } else if (m.size() > 1 && m[0] == 'e') {

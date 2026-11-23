@@ -23,6 +23,7 @@
 // With --mod-option game-statistics.achievement-list=<file> the table is
 // written to <file> as a Recomp Achievements events list about 10 s after it is
 // there (texts in the game's language: --locale en_US for English).
+// A save played with a cheat mod (common/cheats.hpp) sends no events.
 #pragma once
 
 namespace slingshot::mods {
