@@ -15,6 +15,7 @@ struct Game {
 
 struct Mod {
     QString name, description;
+    bool on_by_default = true;  // SLINGSHOT_MOD, not SLINGSHOT_MOD_OFF
 };
 
 QVector<Game> load_games(const QString& source);

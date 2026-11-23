@@ -24,7 +24,8 @@ else()
     target_link_libraries(slingshot_host PRIVATE slingshot::freetype)
 endif()
 
-# The mods that start enabled, as "name,name" ("all" for every one).
+# The mods that start enabled, as "name,name" ("all" for every one, "default"
+# for all but those registered with SLINGSHOT_MOD_OFF).
 # A mod's name is its directory's with "-" for "_".
 string(REPLACE "," ";" default_mods "${SLINGSHOT_DEFAULT_MODS}")
 if(default_mods STREQUAL "none" OR NOT SLINGSHOT_MODS)
@@ -32,7 +33,7 @@ if(default_mods STREQUAL "none" OR NOT SLINGSHOT_MODS)
 endif()
 foreach(mod IN LISTS default_mods)
     string(REPLACE "-" "_" dir "${mod}")
-    if(NOT mod STREQUAL "all" AND NOT IS_DIRECTORY "${CMAKE_SOURCE_DIR}/mods/${dir}")
+    if(NOT mod STREQUAL "all" AND NOT mod STREQUAL "default" AND NOT IS_DIRECTORY "${CMAKE_SOURCE_DIR}/mods/${dir}")
         message(FATAL_ERROR "SLINGSHOT_DEFAULT_MODS: no mod '${mod}' (mods/${dir})")
     endif()
 endforeach()

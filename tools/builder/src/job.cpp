@@ -584,7 +584,7 @@ void Job::run() {
     if (ok) {
         set_phase(kConfigure, 0);
         report("Preparing the build");
-        QStringList args = {"-DGAME_APKS=" + req_.apk, "-DSLINGSHOT_DEFAULT_MODS=" + (req_.all_mods ? QString("all")
+        QStringList args = {"-DGAME_APKS=" + req_.apk, "-DSLINGSHOT_DEFAULT_MODS=" + (req_.default_mods ? QString("default")
                                                                                      : req_.mods.isEmpty() ? QString("none")
                                                                                      : req_.mods.join(';'))};
         args << "-DGAME_EXTRA_starwars2=" + (req_.game.id == "starwars2" ? req_.extra : QString());

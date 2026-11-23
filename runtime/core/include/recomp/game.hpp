@@ -32,7 +32,7 @@ struct GameInfo {
     const char* main_script;  // asset of the script run with the game's globals (gamelogic.lua)
     const char* app_class;    // Java class with the lifecycle natives (nativeInit, nativeUpdate, ...)
     const char* input_class;  // Java class with the input natives (nativeInput, nativeKeyInput, ...)
-    const char* default_mods;  // mods enabled without --mod or SLINGSHOT_MODS: "name,name" or "all"
+    const char* default_mods;  // mods enabled without --mod or SLINGSHOT_MODS: "name,name", "all" or "default"
 };
 
 extern const GameInfo game;

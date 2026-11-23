@@ -4,8 +4,9 @@
 # A file named <game id>.cpp is built for that game only; a mod with such
 # files supports just those games, otherwise every game. common/ holds helpers
 # shared by mods.
-# Which mods start enabled is SLINGSHOT_DEFAULT_MODS (all by default);
-# --mod, --no-mod and SLINGSHOT_MODS change that at run time.
+# Which mods start enabled is SLINGSHOT_DEFAULT_MODS (by default all but those
+# registered with SLINGSHOT_MOD_OFF); --mod, --enable-mod, --disable-mod and
+# SLINGSHOT_MODS change that at run time.
 file(GLOB game_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/games/*/game.json")
 set(game_ids "")
 foreach(f IN LISTS game_files)

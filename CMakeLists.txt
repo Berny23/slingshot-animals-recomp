@@ -15,8 +15,8 @@ set(GAME_APKS "" CACHE STRING "APKs of the supported games (games/*/game.json), 
 set(GAME_EXTRA_starwars2 "" CACHE PATH "Star Wars II's files/assets_service/ of an installation, as zip or folder (optional)")
 set(GAME_ROOT "${CMAKE_BINARY_DIR}/games" CACHE PATH "Where the APKs' libraries, assets and icons are extracted (<root>/<game id>)")
 option(SLINGSHOT_MODS "Build the mods in mods/ into the executables" ON)
-set(SLINGSHOT_DEFAULT_MODS "all" CACHE STRING
-    "Mods enabled when a game is started without --mod or SLINGSHOT_MODS: all, none, or a list such as hide-dead-services;offline-shop")
+set(SLINGSHOT_DEFAULT_MODS "default" CACHE STRING
+    "Mods enabled when a game is started without --mod or SLINGSHOT_MODS: default (all but those registered off), all, none, or a list such as hide-dead-services;offline-shop")
 
 include(cmake/Dependencies.cmake)
 if(SLINGSHOT_HOST_TOOLS)

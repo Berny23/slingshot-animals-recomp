@@ -4,8 +4,10 @@
 // The base port behaves like the original app on an Android device. Anything
 // beyond that (new controls, conveniences, changed behaviour) is a mod: a
 // class registered with SLINGSHOT_MOD in mods/<name>/, built into the
-// executable. The ones in SLINGSHOT_DEFAULT_MODS (a build setting, all by
-// default) start enabled; --mod, --no-mod and SLINGSHOT_MODS change that.
+// executable. SLINGSHOT_MOD_OFF registers one that is off by default. The ones
+// in SLINGSHOT_DEFAULT_MODS (a build setting, "default" = every mod not
+// registered off) start enabled; --mod, --enable-mod, --disable-mod and SLINGSHOT_MODS
+// change that.
 //
 // Mods see every SDL event before the default translation and talk to the
 // game through the same AndroidInput the base port uses, so they can only
@@ -64,6 +66,7 @@ struct ModInfo {
     const char* name;
     const char* description;
     std::unique_ptr<Mod> (*create)();
+    bool on_by_default;
 };
 
 bool register_mod(const ModInfo& info);
@@ -79,6 +82,8 @@ const std::string* mod_option(const std::string& mod, const std::string& key);
 
 }  // namespace slingshot
 
-#define SLINGSHOT_MOD(Type, name, description)                                            \
-    static const bool slingshot_mod_registered_##Type = ::slingshot::register_mod(       \
-        {name, description, []() -> std::unique_ptr<::slingshot::Mod> { return std::make_unique<Type>(); }})
+#define SLINGSHOT_MOD_REGISTER(Type, name, description, on)                                     \
+    static const bool slingshot_mod_registered_##Type = ::slingshot::register_mod(             \
+        {name, description, []() -> std::unique_ptr<::slingshot::Mod> { return std::make_unique<Type>(); }, on})
+#define SLINGSHOT_MOD(Type, name, description) SLINGSHOT_MOD_REGISTER(Type, name, description, true)
+#define SLINGSHOT_MOD_OFF(Type, name, description) SLINGSHOT_MOD_REGISTER(Type, name, description, false)

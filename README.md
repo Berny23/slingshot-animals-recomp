@@ -37,7 +37,7 @@ To uninstall the games on Linux, just delete them under `~/.local/lib/slingshot-
 
 ## Mods
 
-All mods are on by default. In the builder, *Advanced* chooses which ones a game starts with; `--no-mod <name>` turns one off for a single start.
+All mods but those marked *(off)* are on by default. In the builder, *Advanced* chooses which ones a game starts with; `--disable-mod <name>` and `--enable-mod <name>` turn one off or on for a single start.
 
 | Mod | Games | Description |
 | --- | --- | --- |
@@ -59,6 +59,7 @@ All mods are on by default. In the builder, *Advanced* chooses which ones a game
 | `offline-clock` | Star Wars II | Timed features use the device's clock |
 | `missing-translations` | Rio | Translates texts the game shows only in English |
 | `samsung-level` | Space, Star Wars II | Content once given only to Samsung devices is open everywhere |
+| `unlock-episodes` *(off)* | Classic, Seasons, Rio, Star Wars, Star Wars II | Every episode can be played from its first level, without stars, coins or the episodes before it. The levels in it open as usual. Classic and Seasons save the episodes as unlocked |
 
 ## Supported versions
 
@@ -95,7 +96,7 @@ cmake --build build
 
 Each APK is matched to its game by the library and extracted to `build/games/<id>/`; every game gets its own executable `build/bin/slingshot-<id>`. Recompiling a game needs up to 1.5 GB of memory, so games are recompiled one at a time. Build options:
 
-- `-DSLINGSHOT_DEFAULT_MODS=all|none|<list>`: mods enabled by default, e.g. `"hide-dead-services;offline-shop"`
+- `-DSLINGSHOT_DEFAULT_MODS=default|all|none|<list>`: mods enabled by default, e.g. `"hide-dead-services;offline-shop"`; `default` is all but those marked *(off)*
 - `-DSLINGSHOT_MODS=OFF`: build without mods
 
 Cross builds use the recompiler built for this machine (`-DSLINGSHOT_HOST_TOOLS=build/host-tools`):
@@ -117,7 +118,8 @@ build/bin/slingshot-<id> [options] [game-dir]
 | `--help` | Show the options |
 | `--list-mods` | List the mods |
 | `--mod <name>` | Enable only the given mods (repeatable), like `SLINGSHOT_MODS=a,b` |
-| `--no-mod <name>` | Disable a mod |
+| `--enable-mod <name>` | Enable a mod in addition to the others |
+| `--disable-mod <name>` | Disable a mod |
 | `--no-mods` | Original game without mods |
 | `--mod-option <mod>.<key>=<value>` | A setting for a mod (repeatable), see the mod table |
 | `--locale <ll_CC>` | Game language, e.g. `de_DE` |

@@ -2,14 +2,14 @@
 // SDL3 platform host: window, GLES2 context and the Android app lifecycle
 // (what GLSurfaceView, NativeApplication and its Updater do on Android).
 //
-// Usage: slingshot-<game> [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods]
+// Usage: slingshot-<game> [--mod <name>]... [--enable-mod <name>]... [--disable-mod <name>]... [--no-mods] [--list-mods]
 //                         [--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>]
 //                         [--data <dir>] [--dump-scripts <dir>] [game-dir]
 //   game-dir holds lib/, assets/ and icon.png from the APK (default: game/ next to the executable, else where the
 //   build extracted it). The mods enabled are the build's default ones (SLINGSHOT_DEFAULT_MODS), or instead those given with
-//   --mod or SLINGSHOT_MODS=name,name ("all" for every mod); --no-mod takes one
-//   away, --no-mods all of them. --mod-option passes a setting to a mod (see
-//   README.md for each mod's). The device locale is --locale, else
+//   --mod or SLINGSHOT_MODS=name,name ("all" for every mod, "default" for those on by default);
+//   --enable-mod adds one, --disable-mod takes one away, --no-mods all of them.
+//   --mod-option passes a setting to a mod (see README.md for each mod's). The device locale is --locale, else
 //   SLINGSHOT_LOCALE, else the host's (LC_ALL, LC_MESSAGES, LANG).
 //   --data puts the saves and everything else the game writes into <dir> instead of
 //   the system's place for app data.
@@ -306,13 +306,15 @@ std::string host_locale() {
     return locale;
 }
 
-// Appends the mods of a "name,name" list; "all" stands for every mod. With
-// `known_only`, names of mods this game does not have are skipped.
+// Appends the mods of a "name,name" list; "all" stands for every mod, "default"
+// for the ones on by default. With `known_only`, names of mods this game does
+// not have are skipped.
 void add_mods(const std::string& list, std::vector<std::string>& mods, bool known_only = false) {
     std::stringstream ss(list);
     for (std::string m; std::getline(ss, m, ',');) {
-        if (m == "all") {
-            for (const auto& info : slingshot::available_mods()) mods.push_back(info.name);
+        if (m == "all" || m == "default") {
+            for (const auto& info : slingshot::available_mods())
+                if (m == "all" || info.on_by_default) mods.push_back(info.name);
         } else if (!m.empty()) {
             bool known = !known_only;
             for (const auto& info : slingshot::available_mods()) known |= m == info.name;
@@ -339,12 +341,12 @@ void list_mods() {
 }
 
 constexpr char kUsage[] =
-    "usage: %s [--help] [--mod <name>]... [--no-mod <name>]... [--no-mods] [--list-mods] "
+    "usage: %s [--help] [--mod <name>]... [--enable-mod <name>]... [--disable-mod <name>]... [--no-mods] [--list-mods] "
     "[--mod-option <mod>.<key>=<value>]... [--locale <ll_CC>] [--data <dir>] [--dump-scripts <dir>] [game-dir]\n";
 
 // Returns false when the program should exit right away (help, mod list).
 bool parse_args(int argc, char** argv, Options& opt, int& status) {
-    std::vector<std::string> chosen, removed;
+    std::vector<std::string> chosen, added, removed;
     bool any_chosen = false, none = false;
     if (const char* env = std::getenv("SLINGSHOT_MODS")) {
         add_mods(env, chosen);
@@ -354,7 +356,9 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
         if (!std::strcmp(argv[i], "--mod") && i + 1 < argc) {
             add_mods(argv[++i], chosen);
             any_chosen = true;
-        } else if (!std::strcmp(argv[i], "--no-mod") && i + 1 < argc) {
+        } else if (!std::strcmp(argv[i], "--enable-mod") && i + 1 < argc) {
+            add_mods(argv[++i], added, true);
+        } else if (!std::strcmp(argv[i], "--disable-mod") && i + 1 < argc) {
             removed.push_back(argv[++i]);
         } else if (!std::strcmp(argv[i], "--no-mods")) {
             none = true;
@@ -398,11 +402,12 @@ bool parse_args(int argc, char** argv, Options& opt, int& status) {
         }
     }
     if (!any_chosen) add_mods(recomp::game.default_mods, chosen, true);
+    chosen.insert(chosen.end(), added.begin(), added.end());
     // A mod this game doesn't have is off already (launchers pass one set of options to every game).
     for (const std::string& r : removed) {
         bool known = false;
         for (const auto& info : slingshot::available_mods()) known |= r == info.name;
-        if (!known) std::fprintf(stderr, "host: --no-mod %s: no such mod in this game\n", r.c_str());
+        if (!known) std::fprintf(stderr, "host: --disable-mod %s: no such mod in this game\n", r.c_str());
     }
     for (const std::string& m : none ? std::vector<std::string>{} : chosen) {
         bool dropped = false, seen = false;

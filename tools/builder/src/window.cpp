@@ -192,7 +192,7 @@ Window::Window() : games_(load_games(source_dir())) {
     advanced_panel_ = new QWidget(this);
     auto* adv = new QVBoxLayout(advanced_panel_);
     adv->setContentsMargins(8, 0, 0, 0);
-    auto* mods_title = new QLabel("<b>Mods</b> (all on by default)", advanced_panel_);
+    auto* mods_title = new QLabel("<b>Mods</b>", advanced_panel_);
     adv->addWidget(mods_title);
     auto* mods_widget = new QWidget;
     mods_layout_ = new QVBoxLayout(mods_widget);
@@ -414,7 +414,8 @@ void Window::open_apk(const QString& path) {
     }
     for (const Mod& m : load_mods(source_dir(), g.id)) {
         auto* box = new QCheckBox(m.name, mods_layout_->parentWidget());
-        box->setChecked(true);
+        box->setChecked(m.on_by_default);
+        box->setProperty("default", m.on_by_default);
         box->setToolTip(m.description);
         box->setProperty("mod", m.name);
         mods_layout_->addWidget(box);
@@ -477,10 +478,10 @@ void Window::start(bool android, bool install, bool nintendo_switch) {
     r.android = android;
     r.nintendo_switch = nintendo_switch;
     r.install = install;
-    r.all_mods = true;
+    r.default_mods = true;
     for (QCheckBox* box : mod_boxes_) {
         if (box->isChecked()) r.mods << box->property("mod").toString();
-        else r.all_mods = false;
+        if (box->isChecked() != box->property("default").toBool()) r.default_mods = false;
     }
     if (!install) {
         if (nintendo_switch) {

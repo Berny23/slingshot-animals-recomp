@@ -293,7 +293,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "mouse-wheel"
           ]
         }
@@ -313,7 +313,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "keyboard"
           ]
         }
@@ -333,7 +333,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "gamepad-pointer"
           ]
         }
@@ -353,7 +353,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "tap-to-skip"
           ]
         }
@@ -373,7 +373,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "fullscreen"
           ]
         }
@@ -393,7 +393,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "phone-scale"
           ]
         }
@@ -413,7 +413,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "hide-dead-services"
           ]
         }
@@ -433,7 +433,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "offline-shop"
           ]
         }
@@ -453,7 +453,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "game-statistics"
           ]
         }
@@ -473,7 +473,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "offline-league"
           ]
         }
@@ -493,7 +493,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "offline-tournament"
           ]
         }
@@ -513,7 +513,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "composite-audio"
           ]
         }
@@ -533,7 +533,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "offline-assets"
           ]
         }
@@ -553,7 +553,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "audio-quality"
           ]
         }
@@ -573,7 +573,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "seasonal-menu"
           ]
         }
@@ -593,7 +593,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "offline-clock"
           ]
         }
@@ -613,7 +613,7 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "missing-translations"
           ]
         }
@@ -633,8 +633,28 @@
         {
           "label": "Off",
           "args": [
-            "--no-mod",
+            "--disable-mod",
             "samsung-level"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-unlock-episodes",
+      "label": "Unlock episodes",
+      "group": "Mods",
+      "in": "args",
+      "help": "Every episode can be played from its first level; the levels in it still open one after another. Only in Classic, Seasons, Rio, Star Wars, Star Wars II.",
+      "choices": [
+        {
+          "label": "Off",
+          "args": []
+        },
+        {
+          "label": "On",
+          "args": [
+            "--enable-mod",
+            "unlock-episodes"
           ]
         }
       ]

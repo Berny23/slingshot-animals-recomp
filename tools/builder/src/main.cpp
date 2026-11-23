@@ -40,7 +40,7 @@ int run_cli(QCoreApplication& app) {
             r.output = args[++i];
             r.output = QFileInfo(r.output).absoluteFilePath();
         } else if (a == "--mods" && i + 1 < args.size()) {
-            r.all_mods = false;
+            r.default_mods = false;
             const QString list = args[++i];
             if (list != "none") r.mods = list.split(',', Qt::SkipEmptyParts);
         } else {

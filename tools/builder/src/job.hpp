@@ -19,7 +19,7 @@ struct Request {
     QString apk;
     Game game;
     QStringList mods;       // enabled mods
-    bool all_mods = true;   // every mod (also ones added later)
+    bool default_mods = true;  // the mods on by default (also ones added later)
     bool android = false;
     bool nintendo_switch = false;  // a homebrew .nro, saved to `output`
     bool install = true;    // false: build only, into `output`

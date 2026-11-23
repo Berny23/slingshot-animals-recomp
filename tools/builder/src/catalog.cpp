@@ -25,21 +25,21 @@ QVector<Game> load_games(const QString& source) {
 
 namespace {
 
-// SLINGSHOT_MOD(Type, "name", "description" "continued") in a source file.
+// SLINGSHOT_MOD(Type, "name", "description" "continued") or SLINGSHOT_MOD_OFF(...) in a source file.
 QVector<Mod> registrations(const QString& path) {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) return {};
     QString text = QString::fromUtf8(f.readAll());
     text.replace(QRegularExpression("\\\\\\s*\\n"), " ");  // macro line continuations
-    static const QRegularExpression call(R"re(SLINGSHOT_MOD\(\s*\w+\s*,\s*"([^"]+)"\s*,((?:\s*"(?:[^"\\]|\\.)*")+)\s*\))re");
+    static const QRegularExpression call(R"re(SLINGSHOT_MOD(_OFF)?\(\s*\w+\s*,\s*"([^"]+)"\s*,((?:\s*"(?:[^"\\]|\\.)*")+)\s*\))re");
     static const QRegularExpression literal(R"re("((?:[^"\\]|\\.)*)")re");
     QVector<Mod> mods;
     for (auto it = call.globalMatch(text); it.hasNext();) {
         const auto m = it.next();
         QString description;
-        for (auto lit = literal.globalMatch(m.captured(2)); lit.hasNext();) description += lit.next().captured(1);
+        for (auto lit = literal.globalMatch(m.captured(3)); lit.hasNext();) description += lit.next().captured(1);
         description.replace("\\\"", "\"");
-        mods.push_back({m.captured(1), description});
+        mods.push_back({m.captured(2), description, m.captured(1).isEmpty()});
     }
     return mods;
 }
