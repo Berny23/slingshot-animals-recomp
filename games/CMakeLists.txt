@@ -237,6 +237,11 @@ foreach(game_file IN LISTS game_files)
         if(NOT NINTENDO_SWITCH)
             set_target_properties(${exe} PROPERTIES ENABLE_EXPORTS ON)  # symbol names in crash backtraces
         endif()
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            # Keep the static libraries' symbols (HarfBuzz, FreeType, SDL3) private: exported, they
+            # would replace the system's copies in libraries such as GTK that libdecor loads.
+            target_link_options(${exe} PRIVATE -Wl,--exclude-libs,ALL)
+        endif()
     endif()
     target_link_libraries(${exe} PRIVATE slingshot_host recomp_runtime recomp_game_code_${id})
     if(TARGET slingshot-${id}-extra)
