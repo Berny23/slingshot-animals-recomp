@@ -55,7 +55,7 @@ All mods are on by default. In the builder, *Advanced* chooses which ones a game
 | `composite-audio` | Star Wars, Star Wars II | Plays the menu music and power-up sounds again |
 | `offline-assets` | Star Wars II | Starts without the download server (see below) |
 | `audio-quality` | Stella | Stereo sound at 24 kHz, better than on Android |
-| `seasonal-menu` | Seasons | The main menu shows a random episode of the current season (Halloween, Christmas, ...). `--mod-option seasonal-menu.season=<name>` picks one |
+| `seasonal-menu` | Seasons | Before an episode is played, the main menu shows a random episode of the current season instead of Ragnahog. The splash screen shows the logo of the menu's episode instead of the hardcoded Ragnahog picture. `--mod-option seasonal-menu.season=<name>` picks one |
 | `offline-clock` | Star Wars II | Timed features use the device's clock |
 | `missing-translations` | Rio | Translates texts the game shows only in English |
 | `samsung-level` | Space, Star Wars II | Content once given only to Samsung devices is open everywhere |

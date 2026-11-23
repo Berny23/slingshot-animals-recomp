@@ -564,7 +564,7 @@
       "label": "Seasonal menu",
       "group": "Mods",
       "in": "args",
-      "help": "The main menu shows an episode of the current season. Only in Seasons.",
+      "help": "Before an episode is played, the main menu shows an episode of the current season instead of Ragnahog. Only in Seasons.",
       "choices": [
         {
           "label": "On",

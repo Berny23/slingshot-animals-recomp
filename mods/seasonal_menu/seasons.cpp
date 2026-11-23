@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The main menu shows the season of the device's date: the background and
-// music of an episode made for that time of year (Halloween, Christmas,
-// Easter, ...). Seasons with several such episodes show a random one at each
-// start. --mod-option seasonal-menu.season=<name>[:<n>] shows that season
-// (its n-th episode).
+// The game shows the menu theme of the episode last played (a level's theme
+// sets settingsWrapper's current main menu theme). Until then, and after a
+// game update, it is Ragnahog's (getLatestMainMenuTheme). In its place the
+// main menu shows the season of the device's date: the background and music
+// of an episode made for that time of year (Halloween, Christmas, Easter,
+// ...). Seasons with several such episodes show a random one at each start.
+// --mod-option seasonal-menu.season=<name>[:<n>] shows that season (its n-th
+// episode).
 //
-// The game itself shows the menu theme of the episode last played (a level's
-// theme sets settingsWrapper's current main menu theme), and Ragnahog's before
-// that (getLatestMainMenuTheme). Every episode's menu theme is in the APK
+// Every episode's menu theme is in the APK
 // (scripts/themes/themeNN.lua and its loadgroup), as is its menu music
 // (requiredAudio.menuMusic). The start-up splash, whose only picture is
-// Ragnahog's, shows the season's episode logo instead.
+// Ragnahog's, shows the logo of the menu theme that follows it instead.
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -169,9 +170,12 @@ function seasonalMenu()
 end
 )";
 
-// The menu theme: the season's instead of the one stored. Its theme table is
-// read on first use (refreshThemeTable, blocks.lua); the menus load its
-// graphics as for any menu theme.
+// The menu theme: the season's while the one stored is the latest episode's,
+// unless a level stored it. The theme a level stored (loadAndSetTheme) is
+// kept in the save as seasonalMenuPlayedTheme; other callers of
+// setCurrentMainMenuTheme clear it. Its theme table is read on first use
+// (refreshThemeTable, blocks.lua); the menus load its graphics as for any menu
+// theme.
 constexpr const char* kSettings = R"(
 local function seasonal_theme()
     local menu = seasonalMenu()
@@ -182,20 +186,30 @@ local function seasonal_theme()
     end
     if themes and themes[menu.theme] then return menu.theme end
 end
-for _, name in ipairs({'getCurrentMainMenuTheme', 'getLatestMainMenuTheme'}) do
-    local original = settingsWrapper[name]
-    settingsWrapper[name] = function(...)
-        return seasonal_theme() or original(...)
+local current = settingsWrapper.getCurrentMainMenuTheme
+local latest = settingsWrapper.getLatestMainMenuTheme
+local set = settingsWrapper.setCurrentMainMenuTheme
+function settingsWrapper.getCurrentMainMenuTheme(...)
+    local theme = current(...)
+    if theme == latest(...) and not (settings and settings.seasonalMenuPlayedTheme == theme) then
+        return seasonal_theme() or theme
     end
+    return theme
+end
+function settingsWrapper.setCurrentMainMenuTheme(self, theme, ...)
+    if settings then settings.seasonalMenuPlayedTheme = seasonalMenuInLevelTheme and theme or nil end
+    return set(self, theme, ...)
 end
 )";
 
 // The music: the main menu plays currentMainMenuSong, which the game takes
-// from the current episode; here it is the season's episode's.
+// from the current episode; with the season's theme it is the season's
+// episode's.
 constexpr const char* kMainMenu = R"(
 local update = MainMenuRoot.update
 function MainMenuRoot:update(...)
     local menu = seasonalMenu()
+    if menu and settingsWrapper:getCurrentMainMenuTheme() ~= menu.theme then menu = nil end
     local episode = menu and getLocalEpisode(menu.episode)
     local music = episode and episode.requiredAudio and episode.requiredAudio.menuMusic
     local clip = music and music.clipName
@@ -208,23 +222,43 @@ function MainMenuRoot:update(...)
     end
     return update(self, ...)
 end
+-- Resets the save to the latest episode through loadAndSetTheme.
+local deleteCloudData = MainMenuRoot.deleteCloudData
+function MainMenuRoot:deleteCloudData(...)
+    local results = {deleteCloudData(self, ...)}
+    if settings then settings.seasonalMenuPlayedTheme = nil end
+    return unpack(results)
+end
+)";
+
+// A level's theme (gamelogic.lua): see kSettings.
+constexpr const char* kLevel = R"(
+local loadAndSetTheme_ = loadAndSetTheme
+local function done(...)
+    seasonalMenuInLevelTheme = nil
+    return ...
+end
+function loadAndSetTheme(...)
+    seasonalMenuInLevelTheme = true
+    return done(loadAndSetTheme_(...))
+end
 )";
 
 // The start-up splash (AngryBirdsSplash): Ragnahog's picture, the only one in
-// the APK. For another season it shows that episode's logo (the menu theme's
-// logoImage) on black; the menu theme's loadgroup is loaded for it and let go
-// when the splash closes.
+// the APK. For another menu theme (the season's or the episode last played)
+// it shows that theme's logoImage on black; the theme's loadgroup is loaded
+// for it and let go when the splash closes.
 constexpr const char* kSplash = R"(
-local SEASON_DEFAULT = 'theme51menu'  -- the picture is Ragnahog's
+local PICTURE_THEME = 'theme51menu'  -- the picture is Ragnahog's
 local init = AngryBirdsSplash.init
 function AngryBirdsSplash:init(...)
     local results = {init(self, ...)}
-    local menu = seasonalMenu()
+    local name = settingsWrapper:getCurrentMainMenuTheme()
     local bg = self:getChild('bg')
-    if menu and menu.theme ~= SEASON_DEFAULT and bg and settingsWrapper:getCurrentMainMenuTheme() == menu.theme then
-        local theme = blockTable.themes[menu.theme]
-        if theme and theme.logoImage and pcall(dynamic.load, menu.theme) then
-            self.seasonalLoadgroup = menu.theme
+    if name and name ~= PICTURE_THEME and bg then
+        local theme = blockTable.themes[name]
+        if theme and theme.logoImage and pcall(dynamic.load, name) then
+            self.seasonalLoadgroup = name
             bg:setImage(theme.logoImage)
         end
     end
@@ -260,6 +294,7 @@ public:
         const std::string choose = seasons_lua() + kChoose;
         append_lua("data/scripts/settingsWrapper.lua", choose + kSettings);
         append_lua("data/scripts/menus/main_menu.lua", kMainMenu);
+        append_lua("data/scripts/gamelogic.lua", kLevel);
         append_lua("data/scripts/menus/splashes.lua", kSplash);
     }
 };
@@ -267,4 +302,4 @@ public:
 }  // namespace
 
 SLINGSHOT_MOD(SeasonalMenu, "seasonal-menu",
-              "The main menu shows a random episode of the current season (Halloween, Christmas, ...)");
+              "Before an episode is played, the main menu shows a random episode of the current season (Halloween, Christmas, ...)");
