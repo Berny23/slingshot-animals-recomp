@@ -18,6 +18,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #ifdef __ANDROID__
+#include <android/native_window.h>
+#include <dlfcn.h>
 #include <jni.h>
 #endif
 #ifdef __SWITCH__
@@ -31,6 +33,7 @@
 #include <windows.h>
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -205,6 +208,59 @@ bool android_display(recomp::java::Display& d) {
     for (jobject o : {jobject(act), wm, jobject(wm_cls), disp, jobject(dm_cls), dm, jobject(disp_cls)}) env->DeleteLocalRef(o);
     env->DeleteLocalRef(activity);
     return ok && d.width > 0 && d.height > 0;
+}
+
+// The highest refresh rate of the display at its current resolution (Display.getMode,
+// getSupportedModes), 0 if unknown.
+float android_max_refresh_rate() {
+    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (!env || !activity) return 0;
+    float best = 0;
+    jclass act = env->GetObjectClass(activity);
+    jobject wm = env->CallObjectMethod(activity, env->GetMethodID(act, "getWindowManager", "()Landroid/view/WindowManager;"));
+    jclass wm_cls = env->FindClass("android/view/WindowManager");
+    jobject disp = env->CallObjectMethod(wm, env->GetMethodID(wm_cls, "getDefaultDisplay", "()Landroid/view/Display;"));
+    jclass disp_cls = env->FindClass("android/view/Display");
+    jclass mode_cls = env->FindClass("android/view/Display$Mode");
+    jmethodID get_w = mode_cls ? env->GetMethodID(mode_cls, "getPhysicalWidth", "()I") : nullptr;
+    jmethodID get_h = mode_cls ? env->GetMethodID(mode_cls, "getPhysicalHeight", "()I") : nullptr;
+    jmethodID get_rate = mode_cls ? env->GetMethodID(mode_cls, "getRefreshRate", "()F") : nullptr;
+    jobject cur = get_rate ? env->CallObjectMethod(disp, env->GetMethodID(disp_cls, "getMode", "()Landroid/view/Display$Mode;")) : nullptr;
+    auto modes = cur ? static_cast<jobjectArray>(env->CallObjectMethod(
+                           disp, env->GetMethodID(disp_cls, "getSupportedModes", "()[Landroid/view/Display$Mode;")))
+                     : nullptr;
+    if (modes && !env->ExceptionCheck()) {
+        const int w = env->CallIntMethod(cur, get_w), h = env->CallIntMethod(cur, get_h);
+        for (jsize i = 0, n = env->GetArrayLength(modes); i < n; ++i) {
+            jobject m = env->GetObjectArrayElement(modes, i);
+            if (env->CallIntMethod(m, get_w) == w && env->CallIntMethod(m, get_h) == h)
+                best = std::max(best, env->CallFloatMethod(m, get_rate));
+            env->DeleteLocalRef(m);
+        }
+    }
+    env->ExceptionClear();
+    for (jobject o : {jobject(act), wm, jobject(wm_cls), disp, jobject(disp_cls), jobject(mode_cls), cur, jobject(modes)})
+        if (o) env->DeleteLocalRef(o);
+    env->DeleteLocalRef(activity);
+    return best;
+}
+
+// The original's GLSurfaceView runs at the display's highest rate; SDL's surface gets
+// the system's default (often 60 Hz) unless it asks. ANativeWindow_setFrameRate is
+// API 30; on older systems the rate stays the system's choice. Asked again for each
+// surface, after refresh_rate_surface is reset when the app goes to the background.
+void* refresh_rate_surface = nullptr;
+void android_request_refresh_rate(SDL_Window* window) {
+    using SetFrameRate = int32_t (*)(ANativeWindow*, float, int8_t);
+    static const auto set_frame_rate =
+        reinterpret_cast<SetFrameRate>(dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate"));
+    static const float rate = set_frame_rate ? android_max_refresh_rate() : 0;
+    if (rate <= 0) return;
+    void* native = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+    if (!native || native == refresh_rate_surface) return;
+    refresh_rate_surface = native;
+    set_frame_rate(static_cast<ANativeWindow*>(native), rate, ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT);
 }
 #endif
 
@@ -579,7 +635,12 @@ int run(int argc, char** argv) {
                 case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
                 case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN: relayout(); break;
                 case SDL_EVENT_WINDOW_MINIMIZED:
-                case SDL_EVENT_WILL_ENTER_BACKGROUND: app.pause(); break;
+                case SDL_EVENT_WILL_ENTER_BACKGROUND:
+#ifdef __ANDROID__
+                    refresh_rate_surface = nullptr;
+#endif
+                    app.pause();
+                    break;
                 case SDL_EVENT_WINDOW_RESTORED:
                 case SDL_EVENT_DID_ENTER_FOREGROUND: app.resume(); break;
                 default: sdl_input.handle(e); break;
@@ -588,6 +649,9 @@ int run(int argc, char** argv) {
         for (auto& m : mods) m->on_frame(ctx);
 
         if (app.state != NativeApp::State::RenderReady) continue;
+#ifdef __ANDROID__
+        android_request_refresh_rate(window);
+#endif
 
         // NativeApplication.doUpdate(): MyInputHandler.handleEvents(), then nativeUpdate().
         // Callbacks the Java side posted (runOnAppThread) run first.
