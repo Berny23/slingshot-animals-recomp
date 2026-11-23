@@ -176,6 +176,8 @@ QString install(const BuiltGame& b, QString& error) {
 #endif
 }
 
+bool export_folder(const BuiltGame& b, const QString& folder, QString& error) { return make_folder(b, folder, error); }
+
 QString export_portable(const BuiltGame& b, const QString& dir, QString& error) {
 #ifdef Q_OS_MACOS
     return make_bundle(b, dir, error);

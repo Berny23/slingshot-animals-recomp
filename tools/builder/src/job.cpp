@@ -97,7 +97,7 @@ int job_count() {
 
 Job::Job(Request request, QObject* parent) : QObject(parent), req_(std::move(request)) {}
 
-QString Job::log_path() const { return cache_dir() + "/last-build.log"; }
+QString Job::log_path() const { return log_dir() + "/last-build.log"; }
 
 void Job::start() {
     QThread* thread = QThread::create([this] { run(); });
@@ -527,7 +527,8 @@ bool Job::finish(QString& message, QString& path, QString& error) {
         return true;
     }
     BuiltGame built{req_.game, build_dir_ + "/bin/slingshot-" + id + kExe, build_dir_ + "/games/" + id};
-    path = req_.install ? install(built, error) : export_portable(built, req_.output, error);
+    if (req_.exact_output) path = export_folder(built, req_.output, error) ? req_.output : QString();
+    else path = req_.install ? install(built, error) : export_portable(built, req_.output, error);
     if (path.isEmpty()) return false;
     if (req_.install) {
 #if defined(Q_OS_MACOS)
@@ -546,6 +547,7 @@ bool Job::finish(QString& message, QString& path, QString& error) {
 void Job::run() {
     clock_.start();
     QDir().mkpath(cache_dir());
+    QDir().mkpath(log_dir());
     log_file_.setFileName(log_path());
     if (!log_file_.open(QIODevice::WriteOnly | QIODevice::Truncate)) emit log_line("cannot write " + log_path());
     jobs_ = job_count();

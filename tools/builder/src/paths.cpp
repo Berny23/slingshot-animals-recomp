@@ -33,7 +33,12 @@ QString sdl3_kit_dir() {
 
 namespace {
 bool g_remove_unpacked = false;
-}
+QString g_data_root;
+}  // namespace
+
+void set_data_root(const QString& dir) { g_data_root = QDir::cleanPath(QDir(dir).absolutePath()); }
+
+QString data_root() { return g_data_root; }
 
 QString unpacked_app_dir() {
 #ifdef Q_OS_WIN
@@ -70,6 +75,7 @@ void finish_unpacked_app_removal() {
 }
 
 QString cache_dir() {
+    if (!g_data_root.isEmpty()) return g_data_root + "/cache";
 #ifdef Q_OS_WIN
     const QString base = qEnvironmentVariable("LOCALAPPDATA", QDir::homePath());
     return QDir::cleanPath(base + "/slingshot/c");
@@ -78,7 +84,10 @@ QString cache_dir() {
 #endif
 }
 
+QString log_dir() { return g_data_root.isEmpty() ? cache_dir() : g_data_root + "/logs"; }
+
 QString data_dir() {
+    if (!g_data_root.isEmpty()) return g_data_root + "/builder";
 #ifdef Q_OS_WIN
     const QString base = qEnvironmentVariable("LOCALAPPDATA", QDir::homePath());
     return QDir::cleanPath(base + "/slingshot/data");

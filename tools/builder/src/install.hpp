@@ -25,4 +25,8 @@ QString install(const BuiltGame& built, QString& error);
 // returns its path, or an empty string with `error` set.
 QString export_portable(const BuiltGame& built, const QString& dir, QString& error);
 
+// The executable and game/ in `folder` itself (no app bundle); returns false
+// with `error` set.
+bool export_folder(const BuiltGame& built, const QString& folder, QString& error);
+
 }  // namespace builder

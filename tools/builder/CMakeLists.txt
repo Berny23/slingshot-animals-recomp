@@ -47,6 +47,7 @@ add_executable(slingshot-builder
     src/install.cpp
     src/job.cpp
     src/paths.cpp
+    src/recomplauncher.cpp
     src/window.cpp
     resources/builder.qrc)
 target_link_libraries(slingshot-builder PRIVATE builder_apk Qt6::Widgets Qt6::Network Qt6::Svg)

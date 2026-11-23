@@ -2,6 +2,8 @@
 // slingshot-builder                 the window
 // slingshot-builder --build <apk> [--android | --switch] [--only <folder|file.apk|file.nro>] [--mods <a,b>|none]
 //                                   the same build in the terminal
+// slingshot-builder --prepare ... | --play=<id> ...
+//                                   for RecompLauncher (recomplauncher.hpp)
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
@@ -18,6 +20,7 @@
 #endif
 #include "job.hpp"
 #include "paths.hpp"
+#include "recomplauncher.hpp"
 #include "window.hpp"
 
 namespace {
@@ -88,6 +91,11 @@ int main(int argc, char** argv) {
             return run_cli(app);
         }
     }
+    if (builder::is_recomplauncher_mode(argc, argv)) {
+        QCoreApplication app(argc, argv);
+        app.setApplicationName("slingshot-builder");
+        return builder::run_recomplauncher_mode();
+    }
 #if defined(__linux__)
     // The AppImage carries its own Qt: the desktop portal gives it the
     // system's file dialogs and light/dark setting.
@@ -116,7 +124,8 @@ int main(int argc, char** argv) {
     app.setWindowIcon(QIcon(":/builder.svg"));
     builder::Window window;
     window.show();
-    if (app.arguments().size() > 1) window.open_apk(app.arguments().at(1));
+    // An APK given on the command line (options such as RecompLauncher's --data= are not one)
+    if (app.arguments().size() > 1 && !app.arguments().at(1).startsWith("--")) window.open_apk(app.arguments().at(1));
     const int code = app.exec();
     builder::finish_unpacked_app_removal();
     return code;

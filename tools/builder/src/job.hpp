@@ -24,6 +24,7 @@ struct Request {
     bool nintendo_switch = false;  // a homebrew .nro, saved to `output`
     bool install = true;    // false: build only, into `output`
     QString output;         // build only: a folder (desktop), the .apk path (Android) or the .nro path
+    bool exact_output = false;  // desktop: `output` is the game's folder itself, on every system
     QString extra;          // Star Wars II: files/assets_service/ as zip or folder, or empty
 };
 

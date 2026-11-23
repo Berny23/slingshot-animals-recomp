@@ -21,9 +21,16 @@ QString sdl3_kit_dir();
 // the folder, or an empty string with `error` set.
 QString sync_sources(QString& error);
 
+// --data=<dir>: everything below goes into <dir> (cache/, logs/, builder/).
+void set_data_root(const QString& dir);
+QString data_root();
+
 // Downloaded tools and build directories; "Clear cache" deletes it. Short on
 // Windows (path length limit of some tools).
 QString cache_dir();
+
+// Where the build log goes: the cache, or <data root>/logs.
+QString log_dir();
 
 // The Windows single-file release unpacks the builder into
 // %LOCALAPPDATA%\slingshot\app\<version>: that folder when this builder runs
