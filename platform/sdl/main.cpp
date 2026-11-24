@@ -145,6 +145,25 @@ struct NativeApp {
 
 void* gl_loader(const char* name) { return reinterpret_cast<void*>(SDL_GL_GetProcAddress(name)); }
 
+#ifdef _WIN32
+// Whether colours drawn to the window get sRGB-encoded: a cleared 20 % grey reads back
+// as about 51 without the encoding and about 124 with it.
+bool window_encodes_srgb() {
+    const auto clear_color =
+        reinterpret_cast<void (*)(float, float, float, float)>(SDL_GL_GetProcAddress("glClearColor"));
+    const auto clear = reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glClear"));
+    const auto read = reinterpret_cast<void (*)(int, int, int, int, unsigned, unsigned, void*)>(
+        SDL_GL_GetProcAddress("glReadPixels"));
+    if (!clear_color || !clear || !read) return false;
+    unsigned char px[4] = {};
+    clear_color(0.2f, 0.2f, 0.2f, 1.0f);
+    clear(0x4000);                          // GL_COLOR_BUFFER_BIT
+    read(0, 0, 1, 1, 0x1908, 0x1401, px);  // GL_RGBA, GL_UNSIGNED_BYTE
+    clear_color(0.0f, 0.0f, 0.0f, 0.0f);
+    return px[0] > 90;
+}
+#endif
+
 #ifdef __ANDROID__
 // The APK carries game/ (library, assets, icon) and game/files.txt, the list of its
 // files. The first start after an install or update copies them to internal storage,
@@ -495,20 +514,56 @@ int run(int argc, char** argv) {
             return 1;
         }
     }
+    // Where the driver still hands out an sRGB framebuffer, its encoding is switched off:
+    // OpenGL ES can only with GL_EXT_sRGB_write_control, so where it still encodes,
+    // desktop OpenGL is used. Again each frame: after a fullscreen change Windows drivers
+    // may present through a new surface that has it on.
+    const auto srgb_switch = [&] {
+        return (desktop_gl || SDL_GL_ExtensionSupported("GL_EXT_sRGB_write_control"))
+                   ? reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glDisable"))
+                   : nullptr;
+    };
+    auto disable = srgb_switch();
+    const auto disable_srgb = [&] {
+        if (disable) disable(0x8DB9);  // GL_FRAMEBUFFER_SRGB
+    };
+    disable_srgb();
+#ifdef _WIN32
+    if (!desktop_gl && window_encodes_srgb()) {
+        std::fprintf(stderr, "host: OpenGL ES encodes colours as sRGB, using desktop OpenGL\n");
+        SDL_GL_DestroyContext(gl);
+        SDL_DestroyWindow(window);
+        gl = nullptr;
+        window = nullptr;
+        SDL_GL_UnloadLibrary();
+        if (open_window(true)) {
+            desktop_gl = true;
+        } else if (!open_window(false)) {
+            std::fprintf(stderr, "host: cannot create an OpenGL window: %s\n", SDL_GetError());
+            return 1;
+        }
+        disable = srgb_switch();
+        disable_srgb();
+    }
+#endif
     if (SDL_Surface* icon = SDL_LoadPNG((opt.game_dir + "/icon.png").c_str())) {
         SDL_SetWindowIcon(window, icon);
         SDL_DestroySurface(icon);
     }
     SDL_GL_SetSwapInterval(1);
-    // Where the driver still hands out an sRGB framebuffer, its encoding is switched off.
-    // Again each frame: after a fullscreen change Windows drivers may present through a
-    // new surface that has it on.
-    const auto disable_srgb = [disable = (desktop_gl || SDL_GL_ExtensionSupported("GL_EXT_sRGB_write_control"))
-                                             ? reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glDisable"))
-                                             : nullptr] {
-        if (disable) disable(0x8DB9);  // GL_FRAMEBUFFER_SRGB
-    };
-    disable_srgb();
+    // Black until the game's first frame: Windows otherwise shows the new window
+    // transparent while the game loads.
+    {
+        const auto clear_color =
+            reinterpret_cast<void (*)(float, float, float, float)>(SDL_GL_GetProcAddress("glClearColor"));
+        const auto clear = reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glClear"));
+        if (clear_color && clear) {
+            clear_color(0.0f, 0.0f, 0.0f, 1.0f);
+            clear(0x4000);  // GL_COLOR_BUFFER_BIT
+            clear_color(0.0f, 0.0f, 0.0f, 0.0f);
+            SDL_GL_SwapWindow(window);
+        }
+    }
     recomp::gles::set_loader(gl_loader);
     recomp::gles::set_desktop_gl(desktop_gl);
     // Where the game's screen is on the surface (pixels from the top left): the whole
