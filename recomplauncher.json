@@ -580,6 +580,26 @@
       ]
     },
     {
+      "id": "mod-ragnahog-progression",
+      "label": "Ragnahog progression",
+      "group": "Mods",
+      "in": "args",
+      "help": "Ragnahog's levels open one after another instead of by the dates of December 2016. Only in Seasons.",
+      "choices": [
+        {
+          "label": "On",
+          "args": []
+        },
+        {
+          "label": "Off",
+          "args": [
+            "--disable-mod",
+            "ragnahog-progression"
+          ]
+        }
+      ]
+    },
+    {
       "id": "mod-offline-clock",
       "label": "Offline clock",
       "group": "Mods",
