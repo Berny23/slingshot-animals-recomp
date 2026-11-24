@@ -123,6 +123,7 @@ local function popup_open()
 end
 local function root_name()
     local root = menuManager and menuManager.menus and menuManager.menus.root
+    if G.levelMaker and G.levelMaker.editing then return 'levelMaker' end  -- level-maker's editor has keys of its own
     return root and root.name
 end
 -- Playing a level, nothing over it.

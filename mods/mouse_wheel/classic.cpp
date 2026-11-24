@@ -7,6 +7,7 @@ namespace {
 constexpr const char* kAdapter = R"(
 function WH.in_level()
     local root = menuManager and menuManager.menus and menuManager.menus.root
+    if _G.levelMaker and _G.levelMaker.editing then return false end  -- level-maker's editor zooms itself
     return root ~= nil and root.name == 'gameHud'
 end
 )";

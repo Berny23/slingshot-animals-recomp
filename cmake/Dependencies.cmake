@@ -24,6 +24,33 @@ function(slingshot_alias name target)
     target_link_libraries(slingshot::${name} INTERFACE ${target})
 endfunction()
 
+# QR codes and pictures for mods (slingshot::qr): always the pinned sources.
+if(NOT SLINGSHOT_TOOLS_ONLY)
+    FetchContent_Declare(qrcodegen
+        URL https://github.com/nayuki/QR-Code-generator/archive/refs/tags/v1.8.0.tar.gz
+        URL_HASH SHA256=2ec0a4d33d6f521c942eeaf473d42d5fe139abcfa57d2beffe10c5cf7d34ae60
+        SOURCE_SUBDIR none EXCLUDE_FROM_ALL SYSTEM)
+    FetchContent_Declare(quirc
+        URL https://github.com/dlbeer/quirc/archive/refs/tags/v1.2.tar.gz
+        URL_HASH SHA256=73c12ea33d337ec38fb81218c7674f57dba7ec0570bddd5c7f7a977c0deb64c5
+        SOURCE_SUBDIR none EXCLUDE_FROM_ALL SYSTEM)
+    FetchContent_Declare(stb
+        URL https://github.com/nothings/stb/archive/6b5799bae8a1fe3792691ef4b72ae26434c3e799.tar.gz
+        URL_HASH SHA256=87e9ecd2d2e0cb8fa35bf5a93ea6ca3999595ea4f0a4738ed1aac0a34cbd4da9
+        SOURCE_SUBDIR none EXCLUDE_FROM_ALL SYSTEM)
+    FetchContent_MakeAvailable(qrcodegen quirc stb)
+    add_library(slingshot_qr STATIC
+        "${qrcodegen_SOURCE_DIR}/c/qrcodegen.c"
+        "${quirc_SOURCE_DIR}/lib/decode.c"
+        "${quirc_SOURCE_DIR}/lib/identify.c"
+        "${quirc_SOURCE_DIR}/lib/quirc.c"
+        "${quirc_SOURCE_DIR}/lib/version_db.c")
+    target_include_directories(slingshot_qr SYSTEM PUBLIC
+        "${qrcodegen_SOURCE_DIR}/c" "${quirc_SOURCE_DIR}/lib" "${stb_SOURCE_DIR}")
+    set_target_properties(slingshot_qr PROPERTIES C_STANDARD 99 POSITION_INDEPENDENT_CODE ON)
+    slingshot_alias(qr slingshot_qr)
+endif()
+
 if(SLINGSHOT_SYSTEM_DEPS AND SLINGSHOT_TOOLS_ONLY)
     find_package(PkgConfig REQUIRED)
     find_package(ZLIB REQUIRED)

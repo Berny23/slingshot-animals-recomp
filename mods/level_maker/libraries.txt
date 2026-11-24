@@ -1,0 +1,3 @@
+slingshot::qr
+slingshot::zlib
+slingshot::SDL3

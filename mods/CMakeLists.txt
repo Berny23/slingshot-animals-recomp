@@ -3,7 +3,8 @@
 # executables and register themselves with SLINGSHOT_MOD (see platform/sdl/mod.hpp).
 # A file named <game id>.cpp is built for that game only; a mod with such
 # files supports just those games, otherwise every game. common/ holds helpers
-# shared by mods.
+# shared by mods. A mod's libraries are listed in its libraries.txt, one
+# target per line.
 # Which mods start enabled is SLINGSHOT_DEFAULT_MODS (by default all but those
 # registered with SLINGSHOT_MOD_OFF); --mod, --enable-mod, --disable-mod and
 # SLINGSHOT_MODS change that at run time.
@@ -42,6 +43,10 @@ function(slingshot_add_mods target id)
         get_filename_component(name "${dir}" NAME)
         if(name STREQUAL "common" OR NOT for_games OR own)
             list(APPEND sources ${shared} ${own})
+            if(EXISTS "${dir}/libraries.txt")
+                file(STRINGS "${dir}/libraries.txt" libraries)
+                target_link_libraries(${target} PRIVATE ${libraries})
+            endif()
         endif()
     endforeach()
     target_sources(${target} PRIVATE ${sources})
