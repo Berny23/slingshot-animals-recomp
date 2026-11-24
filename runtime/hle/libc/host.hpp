@@ -27,6 +27,9 @@ int rename(const char* from, const char* to);
 int64_t pread(int fd, void* buf, size_t n, int64_t off);
 int fsync(int fd);
 int truncate(int fd, int64_t size);
+// pipe(2) with a non-blocking write end. The games' HTTP clients write a wake-up
+// byte per request, and the client pumped without a worker thread never reads
+// them: a full pipe must fail the write, not block the game.
 int pipe(int fds[2]);
 bool valid_fd(int fd);
 // poll(2) with Linux event bits. Windows: pipes are ready to read when they hold

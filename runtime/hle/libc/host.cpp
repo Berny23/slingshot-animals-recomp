@@ -268,13 +268,18 @@ int truncate(int fd, int64_t size) {
 
 int pipe(int fds[2]) {
 #ifdef _WIN32
-    return ::_pipe(fds, 65536, O_BINARY | O_NOINHERIT);
+    if (::_pipe(fds, 65536, O_BINARY | O_NOINHERIT) < 0) return -1;
+    DWORD mode = PIPE_NOWAIT;
+    SetNamedPipeHandleState(reinterpret_cast<HANDLE>(::_get_osfhandle(fds[1])), &mode, nullptr, nullptr);
+    return 0;
 #elif defined(__SWITCH__)
     (void)fds;
     errno = ENOSYS;  // no pipes on the console
     return -1;
 #else
-    return ::pipe(fds);
+    if (::pipe(fds) < 0) return -1;
+    ::fcntl(fds[1], F_SETFL, ::fcntl(fds[1], F_GETFL) | O_NONBLOCK);
+    return 0;
 #endif
 }
 
