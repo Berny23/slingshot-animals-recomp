@@ -664,6 +664,7 @@ void Window::show_about() {
         "<tr><td>QR Code generator (Nayuki)</td><td>&nbsp;MIT</td></tr>"
         "<tr><td>quirc</td><td>&nbsp;ISC</td></tr>"
         "<tr><td>stb_image</td><td>&nbsp;MIT or public domain</td></tr>"
+        "<tr><td>ANGLE (Windows; build-angle by Martins Mozeiko)</td><td>&nbsp;BSD 3-Clause</td></tr>"
         "<tr><td>fontconfig (Linux)</td><td>&nbsp;MIT-style</td></tr>"
         "<tr><td>Zig (Linux, if no compiler is installed)</td><td>&nbsp;MIT</td></tr>"
         "<tr><td>LLVM libc++ (with Zig)</td><td>&nbsp;Apache 2.0 with LLVM exception</td></tr>"
@@ -679,7 +680,8 @@ void Window::show_about() {
         "</table>"
         "<p>Build tools are downloaded from their official sources when needed and checked "
         "against pinned SHA-256 hashes; devkitPro's packages against the hashes in devkitPro's "
-        "package lists.</p>");
+        "package lists. ANGLE has no official binaries: it comes from build-angle's builds "
+        "of Google's source.</p>");
     layout->addWidget(text);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);

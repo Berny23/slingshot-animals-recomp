@@ -146,20 +146,67 @@ struct NativeApp {
 void* gl_loader(const char* name) { return reinterpret_cast<void*>(SDL_GL_GetProcAddress(name)); }
 
 #ifdef _WIN32
-// Whether colours drawn to the window get sRGB-encoded: a cleared 20 % grey reads back
-// as about 51 without the encoding and about 124 with it.
+// Whether colours drawn to the window get sRGB-encoded: a 20 % grey drawn with a shader
+// reads back as about 51 without the encoding and about 124 with it. A clear does not
+// tell: many drivers leave clears unencoded even where they encode what is drawn.
 bool window_encodes_srgb() {
-    const auto clear_color =
-        reinterpret_cast<void (*)(float, float, float, float)>(SDL_GL_GetProcAddress("glClearColor"));
-    const auto clear = reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glClear"));
-    const auto read = reinterpret_cast<void (*)(int, int, int, int, unsigned, unsigned, void*)>(
-        SDL_GL_GetProcAddress("glReadPixels"));
-    if (!clear_color || !clear || !read) return false;
+#define GLFN(type, name) const auto name = reinterpret_cast<type>(SDL_GL_GetProcAddress("gl" #name))
+    GLFN(unsigned (*)(unsigned), CreateShader);
+    GLFN(void (*)(unsigned, int, const char* const*, const int*), ShaderSource);
+    GLFN(void (*)(unsigned), CompileShader);
+    GLFN(unsigned (*)(), CreateProgram);
+    GLFN(void (*)(unsigned, unsigned), AttachShader);
+    GLFN(void (*)(unsigned, unsigned, const char*), BindAttribLocation);
+    GLFN(void (*)(unsigned), LinkProgram);
+    GLFN(void (*)(unsigned, unsigned, int*), GetProgramiv);
+    GLFN(void (*)(unsigned), UseProgram);
+    GLFN(void (*)(unsigned), DeleteShader);
+    GLFN(void (*)(unsigned), DeleteProgram);
+    GLFN(void (*)(unsigned, int, unsigned, unsigned char, int, const void*), VertexAttribPointer);
+    GLFN(void (*)(unsigned), EnableVertexAttribArray);
+    GLFN(void (*)(unsigned), DisableVertexAttribArray);
+    GLFN(void (*)(unsigned, int, int), DrawArrays);
+    GLFN(void (*)(int, int, int, int, unsigned, unsigned, void*), ReadPixels);
+#undef GLFN
+    if (!CreateShader || !ShaderSource || !CompileShader || !CreateProgram || !AttachShader ||
+        !BindAttribLocation || !LinkProgram || !GetProgramiv || !UseProgram || !DeleteShader ||
+        !DeleteProgram || !VertexAttribPointer || !EnableVertexAttribArray || !DisableVertexAttribArray ||
+        !DrawArrays || !ReadPixels)
+        return false;
+    // No #version: GLSL ES 1.00 on OpenGL ES, GLSL 1.10 on desktop OpenGL.
+    const char* const vertex = "attribute vec2 a_pos;\nvoid main() { gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
+    const char* const fragment =
+        "#ifdef GL_ES\nprecision mediump float;\n#endif\n"
+        "void main() { gl_FragColor = vec4(0.2, 0.2, 0.2, 1.0); }\n";
+    const auto compile = [&](unsigned type, const char* src) {
+        const unsigned s = CreateShader(type);
+        ShaderSource(s, 1, &src, nullptr);
+        CompileShader(s);
+        return s;
+    };
+    const unsigned vs = compile(0x8B31, vertex);    // GL_VERTEX_SHADER
+    const unsigned fs = compile(0x8B30, fragment);  // GL_FRAGMENT_SHADER
+    const unsigned program = CreateProgram();
+    AttachShader(program, vs);
+    AttachShader(program, fs);
+    BindAttribLocation(program, 0, "a_pos");
+    LinkProgram(program);
+    int linked = 0;
+    GetProgramiv(program, 0x8B82, &linked);  // GL_LINK_STATUS
     unsigned char px[4] = {};
-    clear_color(0.2f, 0.2f, 0.2f, 1.0f);
-    clear(0x4000);                          // GL_COLOR_BUFFER_BIT
-    read(0, 0, 1, 1, 0x1908, 0x1401, px);  // GL_RGBA, GL_UNSIGNED_BYTE
-    clear_color(0.0f, 0.0f, 0.0f, 0.0f);
+    if (linked) {
+        const float triangle[] = {-1.0f, -1.0f, 3.0f, -1.0f, -1.0f, 3.0f};  // covers the viewport
+        UseProgram(program);
+        VertexAttribPointer(0, 2, 0x1406, 0, 0, triangle);  // GL_FLOAT
+        EnableVertexAttribArray(0);
+        DrawArrays(0x0004, 0, 3);  // GL_TRIANGLES
+        DisableVertexAttribArray(0);
+        UseProgram(0);
+        ReadPixels(0, 0, 1, 1, 0x1908, 0x1401, px);  // GL_RGBA, GL_UNSIGNED_BYTE
+    }
+    DeleteProgram(program);
+    DeleteShader(vs);
+    DeleteShader(fs);
     return px[0] > 90;
 }
 #endif
@@ -540,15 +587,17 @@ int run(int argc, char** argv) {
     // Mouse and touch are separate inputs: no synthetic events in either direction.
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+#ifdef _WIN32
     // Linear output as on Android: Windows drivers otherwise may pick an sRGB framebuffer
     // that brightens every colour.
     SDL_SetHint(SDL_HINT_OPENGL_FORCE_SRGB_FRAMEBUFFER, "0");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "host: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
     // OpenGL ES 2.0 as on Android; desktop OpenGL 2.1 where there is none (macOS, some
-    // Windows drivers) or with SLINGSHOT_DESKTOP_GL=1.
+    // Windows drivers) or with SLINGSHOT_DESKTOP_GL=1. On Windows first ANGLE (see below).
     bool desktop_gl = std::getenv("SLINGSHOT_DESKTOP_GL") != nullptr;
     SDL_Window* window = nullptr;
     SDL_GLContext gl = nullptr;
@@ -582,7 +631,36 @@ int run(int argc, char** argv) {
         }
         return gl != nullptr;
     };
-    if (!open_window(desktop_gl)) {
+    bool angle = false;
+#ifdef _WIN32
+    // ANGLE (OpenGL ES on Direct3D 11), where libEGL.dll and libGLESv2.dll are next to the
+    // executable: Direct3D presents the frames, so the GPU driver's OpenGL cannot encode
+    // them as sRGB. Where it cannot start, or with SLINGSHOT_NO_ANGLE=1, the driver's
+    // OpenGL; the video subsystem starts again, since SDL keeps using EGL once loaded.
+    if (!desktop_gl) {
+        const char* base = SDL_GetBasePath();
+        const std::string dir = base ? base : "";
+        const bool shipped = SDL_GetPathInfo((dir + "libEGL.dll").c_str(), nullptr) &&
+                             SDL_GetPathInfo((dir + "libGLESv2.dll").c_str(), nullptr);
+        if (shipped && !std::getenv("SLINGSHOT_NO_ANGLE")) {
+            SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
+            angle = open_window(false);
+            if (!angle) {
+                std::fprintf(stderr, "host: ANGLE failed (%s), using the driver's OpenGL\n", SDL_GetError());
+                SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "0");
+                SDL_QuitSubSystem(SDL_INIT_VIDEO);
+                if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
+                    std::fprintf(stderr, "host: SDL_InitSubSystem failed: %s\n", SDL_GetError());
+                    return 1;
+                }
+            }
+        }
+        // SDL itself loads libEGL.dll where the driver has no OpenGL ES: a name that does not
+        // exist keeps it on the driver's OpenGL.
+        if (shipped && !angle) SDL_SetHint(SDL_HINT_EGL_LIBRARY, "slingshot-no-angle.dll");
+    }
+#endif
+    if (!angle && !open_window(desktop_gl)) {
 #if !defined(__linux__)
         std::fprintf(stderr, "host: no OpenGL ES 2 (%s), using desktop OpenGL\n", SDL_GetError());
         desktop_gl = true;
@@ -594,14 +672,16 @@ int run(int argc, char** argv) {
             return 1;
         }
     }
-    // Where the driver still hands out an sRGB framebuffer, its encoding is switched off:
-    // OpenGL ES can only with GL_EXT_sRGB_write_control, so where it still encodes,
+    // Windows: where the driver still hands out an sRGB framebuffer, its encoding is switched
+    // off: OpenGL ES can only with GL_EXT_sRGB_write_control, so where it still encodes,
     // desktop OpenGL is used. Again each frame: after a fullscreen change Windows drivers
     // may present through a new surface that has it on.
-    const auto srgb_switch = [&] {
-        return (desktop_gl || SDL_GL_ExtensionSupported("GL_EXT_sRGB_write_control"))
-                   ? reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glDisable"))
-                   : nullptr;
+    const auto srgb_switch = [&]() -> void (*)(unsigned) {
+#ifdef _WIN32
+        if (desktop_gl || SDL_GL_ExtensionSupported("GL_EXT_sRGB_write_control"))
+            return reinterpret_cast<void (*)(unsigned)>(SDL_GL_GetProcAddress("glDisable"));
+#endif
+        return nullptr;
     };
     auto disable = srgb_switch();
     const auto disable_srgb = [&] {
@@ -609,7 +689,7 @@ int run(int argc, char** argv) {
     };
     disable_srgb();
 #ifdef _WIN32
-    if (!desktop_gl && window_encodes_srgb()) {
+    if (!desktop_gl && !angle && window_encodes_srgb()) {
         std::fprintf(stderr, "host: OpenGL ES encodes colours as sRGB, using desktop OpenGL\n");
         SDL_GL_DestroyContext(gl);
         SDL_DestroyWindow(window);
@@ -625,7 +705,17 @@ int run(int argc, char** argv) {
         disable = srgb_switch();
         disable_srgb();
     }
+    if (window_encodes_srgb())
+        std::fprintf(stderr, "host: the driver encodes colours as sRGB, they look too bright\n");
 #endif
+    if (const auto get_string = reinterpret_cast<const unsigned char* (*)(unsigned)>(
+            SDL_GL_GetProcAddress("glGetString"))) {
+        const auto text = [&](unsigned name) {
+            const auto* s = get_string(name);
+            return s ? reinterpret_cast<const char*>(s) : "?";
+        };
+        std::fprintf(stderr, "host: OpenGL %s on %s\n", text(0x1F02), text(0x1F01));  // GL_VERSION, GL_RENDERER
+    }
     if (SDL_Surface* icon = SDL_LoadPNG((opt.game_dir + "/icon.png").c_str())) {
         SDL_SetWindowIcon(window, icon);
         SDL_DestroySurface(icon);

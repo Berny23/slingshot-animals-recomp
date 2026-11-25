@@ -51,6 +51,29 @@ if(NOT SLINGSHOT_TOOLS_ONLY)
     slingshot_alias(qr slingshot_qr)
 endif()
 
+# Windows: ANGLE (OpenGL ES on Direct3D 11) next to the executables, prebuilt from Google's
+# source by https://github.com/mmozeiko/build-angle. The game prefers it over the GPU
+# driver's OpenGL (platform/sdl/main.cpp); SLINGSHOT_ANGLE_DLLS lists the DLLs to ship.
+if(WIN32 AND NOT SLINGSHOT_TOOLS_ONLY)
+    option(SLINGSHOT_ANGLE "Ship ANGLE with the Windows executables" ON)
+    if(SLINGSHOT_ANGLE)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|ARM64|arm64)$")
+            FetchContent_Declare(angle
+                URL https://github.com/mmozeiko/build-angle/releases/download/2026-11-22/angle-arm64-2026-11-22.zip
+                URL_HASH SHA256=b17d4513c2fa24b0ef84f9e1eb712e17df2e1a9f0bf6ea419b643d0879612dd2
+                SOURCE_SUBDIR none EXCLUDE_FROM_ALL)
+        else()
+            FetchContent_Declare(angle
+                URL https://github.com/mmozeiko/build-angle/releases/download/2026-11-22/angle-x64-2026-11-22.zip
+                URL_HASH SHA256=012d0f3fa2970a57acca967809d2c1962893ff4034a54561bde50b36b3ce4c02
+                SOURCE_SUBDIR none EXCLUDE_FROM_ALL)
+        endif()
+        FetchContent_MakeAvailable(angle)
+        set(SLINGSHOT_ANGLE_DLLS "${angle_SOURCE_DIR}/bin/libEGL.dll" "${angle_SOURCE_DIR}/bin/libGLESv2.dll"
+            CACHE INTERNAL "")
+    endif()
+endif()
+
 if(SLINGSHOT_SYSTEM_DEPS AND SLINGSHOT_TOOLS_ONLY)
     find_package(PkgConfig REQUIRED)
     find_package(ZLIB REQUIRED)

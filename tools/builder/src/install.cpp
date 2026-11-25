@@ -50,6 +50,14 @@ bool make_folder(const BuiltGame& b, const QString& dir, QString& error) {
         error = "Cannot copy the game into " + QDir::toNativeSeparators(dir);
         return false;
     }
+    // Windows: ANGLE, the OpenGL ES the game prefers (cmake/Dependencies.cmake).
+    for (const QString& dll : {"libEGL.dll", "libGLESv2.dll"}) {
+        const QString from = QFileInfo(b.executable).path() + "/" + dll;
+        if (QFileInfo::exists(from) && !copy_tree(from, dir + "/" + dll)) {
+            error = "Cannot copy " + dll + " into " + QDir::toNativeSeparators(dir);
+            return false;
+        }
+    }
     QFile::setPermissions(exe, QFile::permissions(exe) | QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther);
     return true;
 }
