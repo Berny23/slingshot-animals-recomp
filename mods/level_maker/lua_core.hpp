@@ -57,15 +57,61 @@ function LM.copy(t)
     return c
 end
 
--- Where a theme's ground is (y of its Ground objects in the game's levels); 5 for the rest.
-LM.GROUND = {themeDino = -14, themeDino2 = -10, theme29 = 3, themeFarm = 3}
+-- Where a theme's ground is drawn (the y its Ground object needs); 5 for the rest. The UGC
+-- backgrounds draw theirs 5 units higher than their levels' Ground objects.
+LM.GROUND = {themeDino = -14, themeDino2 = -10, theme29 = 3, themeFarm = 3, themeUGC = 0, themeUGC_NASA = 0}
 function LM.groundOf(theme) return LM.GROUND[theme] or 5 end
--- Moves a level up or down (joint points are relative to their objects).
-function LM.shift(L, dy)
-    for _, o in ipairs(L.objects) do o.y = o.y + dy end
+-- The UGC backgrounds' levels stand on cardboard terrain (StaticBlock_05 drawn in their
+-- theme) high above the ground: rows 9.5 apart, centres from y -29.3 up, as in their levels.
+LM.FLOOR = {themeUGC = true, themeUGC_NASA = true}
+local FLOOR_DEF, FLOOR_STEP, FLOOR_ROWS, FLOOR_LOW = 'StaticBlock_05', 9.5, 5, -29.3
+local FLOOR_TOP = FLOOR_LOW - (FLOOR_ROWS - 1) * FLOOR_STEP - 4.9
+-- Where a level on a background stands, as the y a Ground object would have there (its
+-- top is 5 higher).
+function LM.surfaceOf(theme) return LM.FLOOR[theme] and FLOOR_TOP + 5 or LM.groundOf(theme) end
+local function floor_piece(o)
+    if o.def ~= FLOOR_DEF or (o.angle or 0) ~= 0 then return false end
+    local row = (FLOOR_LOW - o.y) / FLOOR_STEP
+    local col = o.x / FLOOR_STEP
+    return row > -0.01 and row < FLOOR_ROWS - 0.99 and math.abs(row - math.floor(row + 0.5)) < 0.001
+        and math.abs(col - math.floor(col + 0.5)) < 0.001
+end
+-- Moves a level onto a new background: its ground objects to the background's ground,
+-- the rest to where the level stands. The cardboard floor comes with the UGC backgrounds
+-- and goes with them (the pieces still where they were laid).
+function LM.changeTheme(L, theme)
+    local old = L.theme
+    if LM.FLOOR[old] and not LM.FLOOR[theme] then
+        local kept = {}
+        for _, o in ipairs(L.objects) do if not floor_piece(o) then kept[#kept + 1] = o end end
+        L.objects = kept
+    end
+    local dy = LM.surfaceOf(theme) - LM.surfaceOf(old)
+    local dg = LM.groundOf(theme) - LM.groundOf(old)
+    for _, o in ipairs(L.objects) do
+        local d = blockTable.blocks[o.def]
+        o.y = o.y + ((d and d.group == 'ground') and dg or dy)
+    end
     if L.sling then L.sling[2] = L.sling[2] + dy * 20 end
     if L.particles then L.particles.y = L.particles.y + dy * 20 end
     if L.boom then L.boom[2], L.boom[4] = L.boom[2] + dy * 20, L.boom[4] + dy * 20 end
+    if LM.FLOOR[theme] and not LM.FLOOR[old] then
+        local l, r
+        for _, o in ipairs(L.objects) do
+            local d = blockTable.blocks[o.def]
+            if d and d.group ~= 'ground' then l, r = math.min(l or o.x, o.x), math.max(r or o.x, o.x) end
+        end
+        if L.sling then l, r = math.min(l or L.sling[1] / 20, L.sling[1] / 20), math.max(r or L.sling[1] / 20, L.sling[1] / 20) end
+        l, r = l or 0, r or 0
+        for k = math.floor((l - 15) / FLOOR_STEP), math.ceil((r + 15) / FLOOR_STEP) do
+            for row = 0, FLOOR_ROWS - 1 do
+                table.insert(L.objects, 2, {def = FLOOR_DEF, x = k * FLOOR_STEP, y = FLOOR_LOW - row * FLOOR_STEP,
+                                            angle = 0, z = 0, extra = {}})
+            end
+        end
+    end
+    L.theme = theme
+    return dy
 end
 function LM.limit(L, name)
     for i, p in ipairs(LM.POWERUPS) do if p == name then return (L.limits or {})[i] or 0 end end
@@ -197,7 +243,7 @@ function LM.check(L)
     end
     local p = L.particles
     if p and not (finite(p.x) and finite(p.y) and finite(p.width)) then return nil, 'particles' end
-    if p and p.name and not (finite(p.start) and finite(p.frame)) then return nil, 'particles' end
+    if p and p.name and not (LM.WEATHER[p.name] and finite(p.start) and finite(p.frame)) then return nil, 'particles' end
     if L.boom then for i = 1, 4 do if not finite(L.boom[i]) then return nil, 'boom' end end end
     local blocks = blockTable.blocks
     for _, o in ipairs(L.objects) do
@@ -471,9 +517,12 @@ function LM.sprites(defs)
     return list
 end
 
+-- Weather: level particles the level-weather mod draws.
+LM.WEATHER = {theme15rain = true, lmSnow = true, lmConfetti = true}
+
 -- mode: 'play' (a saved or loaded level), 'test' (from the editor), 'edit'
 function LM.start(L, mode)
-    LM.level, LM.mode, LM.used, LM.cheered = L, mode, {}, nil
+    LM.level, LM.mode, LM.used, LM.cheered, LM.boosters = L, mode, {}, nil, {}
     LM.data = LM.loaded(L)
     LM.ensureEpisode()
     local two, three = LM.starLimits(L)
@@ -593,6 +642,7 @@ end
 -- In a custom level (test or play, not the editor).
 function LM.playing() return LM.active() and LM.level ~= nil and (LM.mode == 'test' or LM.mode == 'play') end
 LM.used = LM.used or {}
+LM.boosters = LM.boosters or {}
 -- Uses left of a power-up of the level; nil for other items.
 function LM.left(name)
     local n = LM.level and LM.limit(LM.level, name)
@@ -627,6 +677,13 @@ function LM.install(env)
             return unpack(results)
         end
         return f(file, ...)
+    end end)
+    -- the weather (LM.WEATHER) in play and tests
+    wrap(env, 'loadLevelInternal', function(f) return function(...)
+        local results = {f(...)}
+        local p = LM.active() and LM.mode ~= 'edit' and LM.data and LM.data.levelParticles
+        if p and p.particles then env.objects.levelParticles = LM.copy(p) end
+        return unpack(results)
     end end)
     if env.dynamic then
         wrap(env.dynamic, 'enterIngame', function(f) return function(...)
@@ -711,14 +768,26 @@ function LM.install(env)
                 if LM.playing() then LM.used[name] = (LM.used[name] or 0) + 1 end
                 return f(self, name, ...)
             end end)
-            wrap(cls, 'isBoosterActive', function(f) return function(self, ...)
-                if LM.playing() then return false end
+            -- Boosters (the scope): kept for the attempt only, not in the save, no countdown.
+            wrap(cls, 'getBoosterSettings', function(f) return function(self, name, ...)
+                if LM.playing() then
+                    LM.boosters[name] = LM.boosters[name] or {}
+                    return LM.boosters[name]
+                end
+                return f(self, name, ...)
+            end end)
+            wrap(cls, 'getBoosterSecondsLeft', function(f) return function(self, ...)
+                if LM.playing() then return 0 end
                 return f(self, ...)
+            end end)
+            wrap(cls, 'isBoosterActive', function(f) return function(self, name, ...)
+                if LM.playing() then return LM.boosters[name] ~= nil and LM.boosters[name].startedAt ~= nil end
+                return f(self, name, ...)
             end end)
         end
     end
     wrap(env, 'restartLevelIngame', function(f) return function(...)
-        LM.used, LM.cheered = {}, nil
+        LM.used, LM.cheered, LM.boosters = {}, nil, {}
         return f(...)
     end end)
     if igcValueClass then

@@ -293,7 +293,7 @@ function UI.Screen:draw()
         local tx = math.max(10, math.min((screenWidth / k) - tw - 10, t.x - tw * 0.5))
         local ty = t.y + 8
         if ty + 44 > 720 then ty = t.y - 120 end
-        UI.panel(tx, ty, tw, 44, 'dark')
+        UI.panel(tx, ty, tw, 44, 'popup')
         UI.label(t.text, tx + tw * 0.5, ty + 22, 26, 'FONT_BASIC', 'HCENTER', 'VCENTER', tw - 20)
     end
     setRenderState(0, 0, 1, 1, 0, 0, 0, 1)

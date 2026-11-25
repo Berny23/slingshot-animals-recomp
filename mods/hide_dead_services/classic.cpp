@@ -193,6 +193,25 @@ function LinkListener:eventTriggered(event, ...)
 end
 )";
 
+// The fan levels' postcard (Birdday 5 and its golden egg): its front was the fan's sketch,
+// downloaded from Rovio's server, so it shows a download error. The postcard opens on its
+// back (theme, description, the fan's name and country) and no longer flips.
+constexpr const char* kSketch = R"(
+local Element = ui.UGCLevelSketchElement
+if Element and not Element.backOnly then
+    Element.backOnly = true
+    local init = Element.init
+    function Element:init(...)
+        init(self, ...)
+        self.flipped = true
+        if self.front then self.front:setVisible(false) end
+        if self.back then self.back:setVisible(true) end
+        if self.flipButton then self.flipButton:setVisible(false) end
+    end
+    function Element:flip() end
+end
+)";
+
 class HideDeadServices final : public slingshot::Mod {
 public:
     HideDeadServices() {
@@ -208,6 +227,7 @@ public:
         append_lua("data/scripts/menus/StickerBookMenu.lua", kStickerBook);
         append_lua("data/scripts/subsystems/StickerDefinitions.lua", kStickers);
         append_lua("data/scripts/subsystems/LinkListener.lua", kLinks);
+        append_lua("data/scripts/menus/popups/UGCLevelSketch.lua", kSketch);
     }
 };
 

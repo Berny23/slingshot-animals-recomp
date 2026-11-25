@@ -261,11 +261,14 @@ end
 ED.drop = function(o) return drop(o) end
 
 -- ---- changes, undo
+-- The level's settings an undo step keeps besides its objects.
+local SETTINGS = {'theme', 'gravity', 'particles', 'music', 'limits', 'boom'}
 local function snapshot()
-    local s = {objects = {}, joints = LM.copy(ED.L.joints)}
+    local s = {objects = {}, joints = LM.copy(ED.L.joints), settings = {}}
     for i, o in ipairs(ED.L.objects) do
         s.objects[i] = {def = o.def, x = o.x, y = o.y, angle = o.angle, z = o.z, extra = LM.copy(o.extra)}
     end
+    for _, k in ipairs(SETTINGS) do s.settings[k] = LM.copy(ED.L[k]) end
     return s
 end
 
@@ -288,6 +291,20 @@ local function create(o)
 end
 
 local function restore(s)
+    local L = ED.L
+    local theme, music = L.theme, LM.musicOf(L)
+    for _, k in ipairs(SETTINGS) do L[k] = LM.copy(s.settings[k]) end
+    if LM.musicOf(L) ~= music then LM.playMusic(L) end
+    if L.theme ~= theme then
+        -- another background: the scene is built again, the view where the level now stands
+        ED.L.objects, ED.L.joints = s.objects, s.joints
+        ED.cam.y = ED.cam.y + (LM.surfaceOf(L.theme) - LM.surfaceOf(theme)) * 20
+        local first = LM.birdOrder(L)[1]
+        if first then L.sling = {first.x * 20, first.y * 20} end
+        changed()
+        ED.rebuild()
+        return
+    end
     for _, o in ipairs(ED.L.objects) do
         if o.name and not is_ground(o) then removeObject(o.name) end
     end
@@ -777,7 +794,11 @@ local function scene_drag(phase, x, y)
 end
 
 local function scene_tap(x, y)
-    if ED.menu then ED.menu = nil return end
+    -- the settings close with their X (or the back key) only
+    if ED.menu then
+        if ED.menu.kind ~= 'settings' then ED.menu = nil end
+        return
+    end
     local o = pick(x, y)
     if ED.connecting then
         if o and o ~= ED.connecting.o then ED.connect(ED.connecting.o, o, ED.connecting.kind) end
@@ -938,11 +959,9 @@ local function settings_menu()
     if ED.menu.theme and ED.menu.theme ~= L.theme then
         UI.button(x + 680, y, 200, 60, T('apply'), {id = 'thapply', icon = 'CHECKMARK', color = C.play, tap = function()
             ED.remember()
-            -- the level and the view to the new background's ground
-            local dy = LM.groundOf(ED.menu.theme) - LM.groundOf(L.theme)
-            LM.shift(L, dy)
+            -- the level and the view to where the new background's levels stand
+            local dy = LM.changeTheme(L, ED.menu.theme)
             ED.cam.y = ED.cam.y + dy * 20
-            L.theme = ED.menu.theme
             ED.menu = nil
             changed()
             ED.rebuild()
@@ -958,23 +977,30 @@ local function settings_menu()
     -- weather
     y = y + 75
     UI.label(T('weather'), x, y + 30, 28, 'FONT_BASIC', 'LEFT')
-    UI.button(x + 260, y, 200, 60, T('weather_none'), {id = 'wn', selected = not (L.particles and L.particles.name), tap = function()
-        if L.particles and L.particles.name then ED.remember() L.particles = nil changed() end
-    end})
-    UI.button(x + 470, y, 200, 60, T('weather_rain'), {id = 'wr', selected = L.particles and L.particles.name == 'theme15rain', tap = function()
-        ED.remember()
-        local l, t, r = LM.bounds(L)
-        l, t, r = l or 0, t or -400, r or 1600
-        L.particles = {x = (l + r) * 0.5, y = t - 1200, width = (r - l) + 4000, name = 'theme15rain', start = 1500, frame = 150}
-        changed()
-    end})
+    local weather = L.particles and L.particles.name
+    local kinds = {{'wn', 'weather_none'}, {'wr', 'weather_rain', 'theme15rain'}, {'ws', 'weather_snow', 'lmSnow'},
+                   {'wc', 'weather_confetti', 'lmConfetti'}}
+    for i, k in ipairs(kinds) do
+        UI.button(x + 260 + (i - 1) * 210, y, 200, 60, T(k[2]), {id = k[1], selected = weather == k[3], tap = function()
+            if weather == k[3] then return end
+            ED.remember()
+            if k[3] then
+                local l, t, r = LM.bounds(L)
+                l, t, r = l or 0, t or -400, r or 1600
+                L.particles = {x = (l + r) * 0.5, y = t - 1200, width = (r - l) + 4000, name = k[3], start = 0, frame = 0}
+            else
+                L.particles = nil
+            end
+            changed()
+        end})
+    end
     -- music: none, the background's, or one of LM.MUSIC; it plays at once
     y = y + 75
     local music = {'off', false}
     for _, m in ipairs(LM.MUSIC) do music[#music + 1] = m end
     local mi = 2
     for i, m in ipairs(music) do if m == (L.music or false) then mi = i end end
-    local mname = mi == 1 and T('music_off') or mi == 2 and T('music_default') or string.format(T('music_track'), mi - 2)
+    local mname = mi == 1 and T('music_off') or mi == 2 and T('music_default') or T('music_' .. music[mi])
     chooser('mu', T('music'), #music, mi, mname, function(i)
         ED.remember()
         L.music = music[i] or nil
@@ -1085,7 +1111,7 @@ function ED.build()
     if ED.justBeaten then ED.justBeaten = nil ED.toast(T('beaten_now')) end
     if ED.toastText and ED.toastTime > 0 then
         ED.toastTime = ED.toastTime - 1
-        UI.panel(w * 0.5 - 330, 120, 660, 60, 'dark')
+        UI.panel(w * 0.5 - 330, 120, 660, 60, 'popup')
         UI.label(ED.toastText, w * 0.5, 150, 28, 'FONT_BASIC', 'HCENTER', 'VCENTER', 640)
     end
 end
