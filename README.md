@@ -130,7 +130,7 @@ build/bin/slingshot-<id> [options] [game-dir]
 | `--data <dir>` | Keep the saves in `<dir>` instead of the folder below |
 | `--dump-scripts <dir>` | Write the game's scripts and configs out decrypted |
 
-Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`) on Linux, `%APPDATA%\slingshot-animals-recomp\<id>\` on Windows, `~/Library/Application Support/slingshot-animals-recomp/<id>/` on macOS and `sdmc:/switch/slingshot-animals-recomp/<id>/` on the Switch; on Android they stay in the app's storage until it is uninstalled. They are encrypted by the game; copy the folder while the game is not running to back them up.
+Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`) on Linux, `%APPDATA%\slingshot-animals-recomp\<id>\` on Windows, `~/Library/Application Support/slingshot-animals-recomp/<id>/` on macOS and `sdmc:/switch/slingshot-animals-recomp/<id>/` on the Switch; on Android `Android/media/<package>.recomp/<id>/` on the device's storage (saves of earlier versions are moved there on the first start; uninstalling deletes them). They are encrypted by the game; copy the folder while the game is not running to back them up.
 
 ## Modding
 

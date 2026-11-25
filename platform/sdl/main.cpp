@@ -200,6 +200,81 @@ std::string android_game_dir() {
     return dir;
 }
 
+// Context.getExternalMediaDirs()[0] (Android/media/<package> on shared storage, which
+// file managers and USB access reach without permissions), "" if there is none.
+std::string android_media_dir() {
+    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (!env || !activity) return {};
+    std::string path;
+    jclass act = env->GetObjectClass(activity);
+    jmethodID get_dirs = env->GetMethodID(act, "getExternalMediaDirs", "()[Ljava/io/File;");
+    auto dirs = get_dirs ? static_cast<jobjectArray>(env->CallObjectMethod(activity, get_dirs)) : nullptr;
+    jobject first = dirs && !env->ExceptionCheck() && env->GetArrayLength(dirs) > 0
+                        ? env->GetObjectArrayElement(dirs, 0) : nullptr;
+    jclass file_cls = env->FindClass("java/io/File");
+    auto str = first && file_cls ? static_cast<jstring>(env->CallObjectMethod(
+                                       first, env->GetMethodID(file_cls, "getAbsolutePath", "()Ljava/lang/String;")))
+                                 : nullptr;
+    if (str && !env->ExceptionCheck()) {
+        if (const char* s = env->GetStringUTFChars(str, nullptr)) {
+            path = s;
+            env->ReleaseStringUTFChars(str, s);
+        }
+    }
+    env->ExceptionClear();
+    for (jobject o : {jobject(act), jobject(dirs), first, jobject(file_cls), jobject(str)})
+        if (o) env->DeleteLocalRef(o);
+    env->DeleteLocalRef(activity);
+    return path;
+}
+
+// Whether every regular file below from has a copy of the same size below to.
+bool same_files(const std::filesystem::path& from, const std::filesystem::path& to) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(from, ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const fs::path copy = to / fs::relative(it->path(), from, ec);
+        if (ec) return false;
+        const auto size = it->file_size(ec);
+        if (ec || fs::file_size(copy, ec) != size || ec) return false;
+    }
+    return !ec;
+}
+
+// The saves' folder: <media>/<id>. Saves of earlier versions, in the app's internal
+// storage (<old>), are copied there first: into <id>.moving, which is renamed to <id>
+// once every file is there, then <old> is removed. Without shared storage, or if the
+// copy fails, the saves stay in <old>.
+std::string android_save_dir(const std::string& old) {
+    namespace fs = std::filesystem;
+    const std::string media = android_media_dir();
+    if (media.empty()) return old;
+    const fs::path dir = fs::path(media) / recomp::game.id;
+    const fs::path moving = dir.string() + ".moving";
+    std::error_code ec;
+    fs::create_directories(media, ec);
+    if (!fs::exists(fs::path(media) / ".nomedia", ec)) SDL_SaveFile((fs::path(media) / ".nomedia").string().c_str(), "", 0);
+    fs::remove_all(moving, ec);  // an interrupted copy
+    if (fs::exists(dir, ec) || !fs::is_directory(old, ec) || fs::is_empty(old, ec)) {
+        if (!fs::is_directory(dir, ec)) fs::create_directories(dir, ec);
+        return fs::is_directory(dir, ec) ? dir.string() : old;
+    }
+    ec.clear();
+    fs::copy(old, moving, fs::copy_options::recursive, ec);
+    if (!ec && same_files(old, moving)) fs::rename(moving, dir, ec);
+    else if (!ec) ec = std::make_error_code(std::errc::io_error);
+    if (ec) {
+        std::fprintf(stderr, "host: cannot move the saves to %s: %s\n", dir.string().c_str(), ec.message().c_str());
+        fs::remove_all(moving, ec);
+        return old;
+    }
+    fs::remove_all(old, ec);
+    std::fprintf(stderr, "host: moved the saves to %s\n", dir.string().c_str());
+    return dir.string();
+}
+
 // DeviceInfoWrapper's values: Display.getRealMetrics (the whole screen, system bars
 // included) in landscape, the activity's orientation, and the mean of xdpi and ydpi.
 bool android_display(recomp::java::Display& d) {
@@ -446,9 +521,14 @@ int run(int argc, char** argv) {
     recomp::vfs_set_asset_root(opt.game_dir + "/assets");
 #if !defined(__linux__) || defined(__ANDROID__)
     // Saves: the system's place for app data (on Linux $XDG_DATA_HOME, the runtime's default).
+    // On Android Android/media/<package>, reachable from file managers and over USB.
     if (char* pref = SDL_GetPrefPath(nullptr, "slingshot-animals-recomp")) {
-        recomp::vfs_set_root(std::string(pref) + recomp::game.id);
+        std::string root = std::string(pref) + recomp::game.id;
         SDL_free(pref);
+#ifdef __ANDROID__
+        if (opt.data_dir.empty()) root = android_save_dir(root);
+#endif
+        recomp::vfs_set_root(root);
     }
 #endif
     if (!opt.data_dir.empty()) recomp::vfs_set_root(opt.data_dir);
