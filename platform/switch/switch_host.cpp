@@ -2,22 +2,51 @@
 #include "switch_host.hpp"
 
 #include <arpa/inet.h>  // before switch.h: nxlink's address type
+#include <fcntl.h>
 #include <switch.h>
+#include <sys/iosupport.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <mutex>
 
 namespace slingshot::nx {
 namespace {
 bool g_nxlink = false;
-}
 
-void init() {
+// stdout and stderr share the log file's descriptor (two streams on one file would
+// write over each other).
+int g_log_fd = -1;
+std::mutex g_log_lock;
+ssize_t log_write(struct _reent*, void*, const char* p, size_t n) {
+    std::lock_guard lk(g_log_lock);
+    return g_log_fd >= 0 ? ::write(g_log_fd, p, n) : ssize_t(n);
+}
+devoptab_t g_log_device;
+}  // namespace
+
+void init(const std::string& id) {
     romfsInit();
-    // Started with `nxlink -s`: stdout and stderr go to the computer.
+    // Started with `nxlink -s`: stdout and stderr go to the computer, otherwise into
+    // sdmc:/switch/slingshot-animals-recomp/<id>.log (new each start).
     if (__nxlink_host.s_addr && R_SUCCEEDED(socketInitializeDefault())) g_nxlink = nxlinkStdio() >= 0;
+    if (!g_nxlink) {
+        mkdir("sdmc:/switch", 0777);
+        mkdir("sdmc:/switch/slingshot-animals-recomp", 0777);
+        const std::string log = "sdmc:/switch/slingshot-animals-recomp/" + id + ".log";
+        g_log_fd = open(log.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (g_log_fd >= 0) {
+            g_log_device.name = "log";
+            g_log_device.write_r = log_write;
+            devoptab_list[STD_OUT] = &g_log_device;
+            devoptab_list[STD_ERR] = &g_log_device;
+            std::setvbuf(stdout, nullptr, _IOLBF, 0);
+            std::setvbuf(stderr, nullptr, _IOLBF, 0);
+        }
+    }
     // newlib knows only POSIX TZ strings: the console's current offset, without DST rules.
     u64 now = 0;
     TimeCalendarTime cal{};
@@ -35,6 +64,13 @@ void init() {
 
 void exit() {
     if (g_nxlink) socketExit();
+    if (g_log_fd >= 0) {
+        std::fflush(stdout);
+        std::fflush(stderr);
+        std::lock_guard lk(g_log_lock);
+        close(g_log_fd);
+        g_log_fd = -1;
+    }
     romfsExit();
 }
 

@@ -103,13 +103,13 @@ int h_close(int fd) {
     g_alarm_fd.compare_exchange_strong(alarm, -1);
     return ret(::close(fd));
 }
-int h_read(int fd, u32 buf, u32 n) { return ret(int(::read(fd, g_mem + buf, n))); }
-int h_write(int fd, u32 buf, u32 n) { return ret(int(::write(fd, g_mem + buf, n))); }
+int h_read(int fd, u32 buf, u32 n) { return ret(int(host::read(fd, g_mem + buf, n))); }
+int h_write(int fd, u32 buf, u32 n) { return ret(int(host::write(fd, g_mem + buf, n))); }
 int h_writev(int fd, u32 iov, int n) {
     int total = 0;
     for (int i = 0; i < n; ++i) {
         const u32 b = ld32(iov + 8 * u32(i)), l = ld32(iov + 8 * u32(i) + 4);
-        const ssize_t w = ::write(fd, g_mem + b, l);
+        const int64_t w = host::write(fd, g_mem + b, l);
         if (w < 0) return ret(-1);
         total += int(w);
     }
@@ -432,8 +432,8 @@ int h_fclose(u32 f) {
     return std::fclose(hf);
 }
 #define FILE_OR(f, v) FILE* hf = host_file(f); if (!hf) { set_guest_errno(EBADF); return v; }
-u32 h_fread(u32 buf, u32 sz, u32 n, u32 f) { FILE_OR(f, 0) return u32(std::fread(g_mem + buf, sz, n, hf)); }
-u32 h_fwrite(u32 buf, u32 sz, u32 n, u32 f) { FILE_OR(f, 0) return u32(std::fwrite(g_mem + buf, sz, n, hf)); }
+u32 h_fread(u32 buf, u32 sz, u32 n, u32 f) { FILE_OR(f, 0) return sz ? u32(host::fread(g_mem + buf, size_t(sz) * n, hf) / sz) : 0; }
+u32 h_fwrite(u32 buf, u32 sz, u32 n, u32 f) { FILE_OR(f, 0) return sz ? u32(host::fwrite(g_mem + buf, size_t(sz) * n, hf) / sz) : 0; }
 int h_fseek(u32 f, int off, int whence) { FILE_OR(f, -1) return std::fseek(hf, off, whence); }
 int h_fseeko(u32 f, int off, int whence) { FILE_OR(f, -1) return host::seek(hf, off, whence); }
 int h_ftell(u32 f) { FILE_OR(f, -1) return int(std::ftell(hf)); }

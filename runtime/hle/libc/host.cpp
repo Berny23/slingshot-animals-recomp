@@ -232,6 +232,62 @@ int rename(const char* from, const char* to) {
 #endif
 }
 
+#ifdef __SWITCH__
+namespace {
+constexpr size_t kBounce = 64 << 10;
+
+// Calls io(host buffer, size) per piece and copies from it; stops at a short piece.
+template <class F>
+int64_t bounce_in(void* dst, size_t n, F io) {
+    static thread_local std::vector<uint8_t> buf(kBounce);
+    size_t done = 0;
+    while (done < n) {
+        const size_t want = std::min(n - done, kBounce);
+        const int64_t r = io(buf.data(), want);
+        if (r < 0) return done ? int64_t(done) : r;
+        std::memcpy(static_cast<uint8_t*>(dst) + done, buf.data(), size_t(r));
+        done += size_t(r);
+        if (size_t(r) < want) break;
+    }
+    return int64_t(done);
+}
+
+// Copies into a host buffer per piece and calls io(host buffer, size).
+template <class F>
+int64_t bounce_out(const void* src, size_t n, F io) {
+    static thread_local std::vector<uint8_t> buf(kBounce);
+    size_t done = 0;
+    while (done < n) {
+        const size_t want = std::min(n - done, kBounce);
+        std::memcpy(buf.data(), static_cast<const uint8_t*>(src) + done, want);
+        const int64_t r = io(buf.data(), want);
+        if (r < 0) return done ? int64_t(done) : r;
+        done += size_t(r);
+        if (size_t(r) < want) break;
+    }
+    return int64_t(done);
+}
+}  // namespace
+
+int64_t read(int fd, void* buf, size_t n) {
+    return bounce_in(buf, n, [&](void* b, size_t k) { return int64_t(::read(fd, b, k)); });
+}
+int64_t write(int fd, const void* buf, size_t n) {
+    return bounce_out(buf, n, [&](const void* b, size_t k) { return int64_t(::write(fd, b, k)); });
+}
+size_t fread(void* buf, size_t n, FILE* f) {
+    return size_t(std::max<int64_t>(0, bounce_in(buf, n, [&](void* b, size_t k) { return int64_t(std::fread(b, 1, k, f)); })));
+}
+size_t fwrite(const void* buf, size_t n, FILE* f) {
+    return size_t(std::max<int64_t>(0, bounce_out(buf, n, [&](const void* b, size_t k) { return int64_t(std::fwrite(b, 1, k, f)); })));
+}
+#else
+int64_t read(int fd, void* buf, size_t n) { return ::read(fd, buf, unsigned(n)); }
+int64_t write(int fd, const void* buf, size_t n) { return ::write(fd, buf, unsigned(n)); }
+size_t fread(void* buf, size_t n, FILE* f) { return std::fread(buf, 1, n, f); }
+size_t fwrite(const void* buf, size_t n, FILE* f) { return std::fwrite(buf, 1, n, f); }
+#endif
+
 int64_t pread(int fd, void* buf, size_t n, int64_t off) {
 #ifdef _WIN32
     const int64_t pos = ::_lseeki64(fd, 0, SEEK_CUR);
@@ -242,7 +298,7 @@ int64_t pread(int fd, void* buf, size_t n, int64_t off) {
 #elif defined(__SWITCH__)  // newlib has no pread
     const off_t pos = ::lseek(fd, 0, SEEK_CUR);
     if (pos < 0 || ::lseek(fd, off_t(off), SEEK_SET) < 0) return -1;
-    const ssize_t r = ::read(fd, buf, n);
+    const int64_t r = read(fd, buf, n);
     ::lseek(fd, pos, SEEK_SET);
     return r;
 #else

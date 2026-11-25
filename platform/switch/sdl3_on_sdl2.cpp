@@ -4,7 +4,9 @@
 #include <SDL3/SDL.h>
 #include <sys/stat.h>
 
+#include <cerrno>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -244,6 +246,14 @@ SDL_Surface* sdl3c_LoadPNG(const char*) {
     return nullptr;
 }
 void sdl3c_DestroySurface(SDL_Surface*) {}
+// File streams are stdio files.
+SDL_IOStream* sdl3c_IOFromFile(const char* file, const char* mode) {
+    FILE* f = std::fopen(file, mode);
+    if (!f) g_error = std::strerror(errno);
+    return reinterpret_cast<SDL_IOStream*>(f);
+}
+size_t sdl3c_WriteIO(SDL_IOStream* io, const void* p, size_t n) { return std::fwrite(p, 1, n, reinterpret_cast<FILE*>(io)); }
+bool sdl3c_CloseIO(SDL_IOStream* io) { return !io || std::fclose(reinterpret_cast<FILE*>(io)) == 0; }
 SDL_MouseButtonFlags sdl3c_GetMouseState(float* x, float* y) { return b::mouse_state(x, y); }
 SDL_Keycode sdl3c_GetKeyFromScancode(SDL_Scancode s, SDL_Keymod, bool) { return b::key_from_scancode(s); }
 

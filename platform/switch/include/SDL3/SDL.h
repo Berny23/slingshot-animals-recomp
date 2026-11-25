@@ -31,6 +31,9 @@
 #define SDL_GetWindowDisplayScale sdl3c_GetWindowDisplayScale
 #define SDL_LoadPNG sdl3c_LoadPNG
 #define SDL_DestroySurface sdl3c_DestroySurface
+#define SDL_IOFromFile sdl3c_IOFromFile
+#define SDL_WriteIO sdl3c_WriteIO
+#define SDL_CloseIO sdl3c_CloseIO
 #define SDL_GetMouseState sdl3c_GetMouseState
 #define SDL_GetKeyFromScancode sdl3c_GetKeyFromScancode
 #define SDL_GL_SetAttribute sdl3c_GL_SetAttribute

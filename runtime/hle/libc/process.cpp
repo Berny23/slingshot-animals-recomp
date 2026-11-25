@@ -95,7 +95,7 @@ u32 do_syscall(u32 nr, ArgReader& a) {
             const int fd = int(a.u32());
             const u32 buf = a.u32(), n = a.u32();
             if (fd != 1 && fd != 2) return u32(-EBADF);
-            return u32(std::fwrite(g_mem + buf, 1, n, fd == 1 ? stdout : stderr));
+            return u32(host::fwrite(g_mem + buf, n, fd == 1 ? stdout : stderr));
         }
         case 158: return u32(::sched_yield());                 // sched_yield
         case 263: {                                            // clock_gettime

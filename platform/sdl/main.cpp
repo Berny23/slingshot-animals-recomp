@@ -761,7 +761,7 @@ int main(int argc, char** argv) {
 #endif
 #ifdef __SWITCH__
     // Recompiled code needs a large stack: the game runs on a thread with 8 MiB.
-    slingshot::nx::init();
+    slingshot::nx::init(recomp::game.id);
     struct Args {
         int argc;
         char** argv;

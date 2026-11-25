@@ -6,9 +6,9 @@
 
 namespace slingshot::nx {
 
-// romfs (the game files inside the NRO), stderr to nxlink when started by it,
-// and the console's time zone for localtime().
-void init();
+// romfs (the game files inside the NRO), stdout and stderr to nxlink when started
+// by it or else to <id>.log on the SD card, and the console's time zone for localtime().
+void init(const std::string& id);
 void exit();
 // The console's shared fonts as files (written once), for ScanFontProvider.
 std::string font_dir();

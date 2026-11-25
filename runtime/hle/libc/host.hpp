@@ -25,6 +25,13 @@ int access(const char* path, int mode);
 // rename(2): replaces an existing target (Windows' rename refuses to).
 int rename(const char* from, const char* to);
 int64_t pread(int fd, void* buf, size_t n, int64_t off);
+// read(2), write(2), fread and fwrite (in bytes) for buffers in guest memory. The
+// Switch refuses guest memory mapped as code memory as an IPC buffer: there the data
+// passes through a host buffer.
+int64_t read(int fd, void* buf, size_t n);
+int64_t write(int fd, const void* buf, size_t n);
+size_t fread(void* buf, size_t n, FILE* f);
+size_t fwrite(const void* buf, size_t n, FILE* f);
 int fsync(int fd);
 int truncate(int fd, int64_t size);
 // pipe(2) with a non-blocking write end. The games' HTTP clients write a wake-up

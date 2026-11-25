@@ -205,7 +205,8 @@ uint8_t* reserve_arena(size_t size, size_t, size_t) {
         g_arena = reinterpret_cast<uint8_t*>(base);
         g_physical = true;
         g_mapped.assign(size / kPage, false);
-    } else if (envIsSyscallHinted(0x4b) && envIsSyscallHinted(0x4c)) {  // svcCreateCodeMemory, svcControlCodeMemory
+    } else if (!envIsSyscallHinted(0x21) ||  // svcSendSyncRequest: no hints from the loader at all
+               (envIsSyscallHinted(0x4b) && envIsSyscallHinted(0x4c))) {  // svcCreateCodeMemory, svcControlCodeMemory
         virtmemLock();
         g_arena = static_cast<uint8_t*>(virtmemFindAslr(size, kChunk));
         if (g_arena) virtmemAddReservation(g_arena, size);

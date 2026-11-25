@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // slingshot-builder                 the window
 // slingshot-builder --build <apk> [--android | --switch] [--only <folder|file.apk|file.nro>] [--mods <a,b>|none]
+//                   [--starwars2-assets=<zip or folder>]
 //                                   the same build in the terminal
 // slingshot-builder --prepare ... | --play=<id> ...
 //                                   for RecompLauncher (recomplauncher.hpp)
@@ -43,9 +44,11 @@ int run_cli(QCoreApplication& app) {
             r.default_mods = false;
             const QString list = args[++i];
             if (list != "none") r.mods = list.split(',', Qt::SkipEmptyParts);
+        } else if (a.startsWith("--starwars2-assets=")) {
+            r.extra = QFileInfo(a.mid(19)).absoluteFilePath();
         } else {
             err << "usage: slingshot-builder --build <apk> [--android | --switch] [--only <folder|file.apk|file.nro>] "
-                   "[--mods <a,b>|none]\n";
+                   "[--mods <a,b>|none] [--starwars2-assets=<zip or folder>]\n";
             return 2;
         }
     }
@@ -56,6 +59,7 @@ int run_cli(QCoreApplication& app) {
         return 1;
     }
     r.game = *game;
+    if (r.game.id != "starwars2") r.extra.clear();  // the extra data belongs to Star Wars II only
     if (r.nintendo_switch) {
         r.install = false;
         if (r.output.isEmpty()) r.output = QDir::currentPath() + "/slingshot-" + r.game.id + ".nro";
