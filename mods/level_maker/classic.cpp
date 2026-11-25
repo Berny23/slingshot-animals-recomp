@@ -7,7 +7,8 @@
 // shared as a code (codec.hpp) or its QR code, once it was beaten.
 //
 // The host part answers the script (send / read, common/script_link.hpp): codes,
-// QR codes, the clipboard, file dialogs, and in the editor the keys, the right
+// QR codes, the clipboard, file dialogs, the camera that reads QR codes (its
+// picture drawn over the game), and in the editor the keys, the right
 // mouse button and the wheel.
 #include <SDL3/SDL.h>
 
@@ -20,6 +21,7 @@
 #include "common/game_scripts.hpp"
 #include "common/script_link.hpp"
 #include "common/statistics.hpp"
+#include "level_maker/camera.hpp"
 #include "level_maker/codec.hpp"
 #include "level_maker/lua_core.hpp"
 #include "level_maker/lua_editor.hpp"
@@ -208,6 +210,7 @@ public:
 
     void on_frame(ModContext& ctx) override {
         finish_dialog();
+        update_camera();
         if (!editing_) {
             keys_.clear();
             return;
@@ -247,6 +250,27 @@ public:
             }
         }
         keys_ = down;
+    }
+
+    // The camera's picture where the scanner page has its frame.
+    void on_overlay(slingshot::Overlay& overlay, ModContext& ctx) override {
+        float x, y, w, h;
+        {
+            std::lock_guard lk(mutex_);
+            if (preview_frames_ <= 0) return;
+            --preview_frames_;
+            x = preview_[0], y = preview_[1], w = preview_[2], h = preview_[3];
+        }
+        if (camera_.state() != lm::QrCamera::State::Running || camera_.pixels().empty()) return;
+        const float scale = ctx.screen_scale > 0 ? ctx.screen_scale : 1;
+        x = ctx.screen.x + x * scale, y = ctx.screen.y + y * scale, w *= scale, h *= scale;
+        // the whole picture, as large as fits
+        const bool side = camera_.turns() % 2 == 1;
+        const float pw = float(side ? camera_.height() : camera_.width());
+        const float ph = float(side ? camera_.width() : camera_.height());
+        const float f = std::min(w / pw, h / ph);
+        overlay.image(camera_.pixels().data(), camera_.width(), camera_.height(), camera_.generation(),
+                      x + (w - pw * f) * 0.5f, y + (h - ph * f) * 0.5f, pw * f, ph * f, camera_.turns());
     }
 
 private:
@@ -317,6 +341,26 @@ private:
             } else {
                 reply_ = dialog_ == Dialog::None ? table({{"error", "'failed'"}}) : table({{"pending", "true"}});
             }
+        } else if (cmd == "camera_available") {
+            std::lock_guard lk(mutex_);
+            if (camera_available_ < 0) camera_check_ = true;
+            reply_ = camera_available_ < 0 ? table({{"pending", "true"}})
+                                           : table({{"ok", camera_available_ ? "true" : "false"}});
+        } else if (cmd == "camera_open" || cmd == "camera_close") {
+            std::lock_guard lk(mutex_);
+            camera_want_ = cmd == "camera_open" ? 1 : 0;
+            preview_frames_ = 0;
+            camera_text_.reset();
+            camera_state_ = cmd == "camera_open" ? "waiting" : "closed";
+            reply_ = table({});
+        } else if (cmd == "camera") {
+            // the preview's frame on the screen (game pixels): x y w h
+            std::lock_guard lk(mutex_);
+            SDL_sscanf(arg.c_str(), "%f %f %f %f", &preview_[0], &preview_[1], &preview_[2], &preview_[3]);
+            preview_frames_ = 3;
+            std::vector<std::pair<std::string, std::string>> fields = {{"state", "'" + camera_state_ + "'"}};
+            if (camera_text_) fields.push_back({"code", lua_string(*camera_text_)});
+            reply_ = table(fields);
         } else if (cmd == "editor") {
             editing_ = arg == "1";
             std::lock_guard lk(mutex_);
@@ -398,6 +442,41 @@ private:
         result_ = result;
         dialog_ = Dialog::Done;
     }
+
+    // ---- the camera: opened, read and closed on the host's frame
+    void update_camera() {
+        int want;
+        bool check;
+        {
+            std::lock_guard lk(mutex_);
+            want = camera_want_;
+            camera_want_ = -1;
+            check = camera_check_;
+            camera_check_ = false;
+        }
+        if (check) {
+            const bool ok = lm::QrCamera::available();
+            std::lock_guard lk(mutex_);
+            camera_available_ = ok ? 1 : 0;
+        }
+        if (want == 1) camera_.open();
+        if (want == 0) camera_.close();
+        camera_.update();
+        using State = lm::QrCamera::State;
+        const char* names[] = {"closed", "none", "waiting", "denied", "running"};
+        std::lock_guard lk(mutex_);
+        if (want != -1 || camera_.state() != State::Closed) camera_state_ = names[int(camera_.state())];
+        if (camera_.found() && !camera_text_) camera_text_ = camera_.found();
+    }
+
+    lm::QrCamera camera_;
+    int camera_want_ = -1;  // 1 open, 0 close
+    int camera_available_ = -1;
+    bool camera_check_ = false;
+    std::string camera_state_ = "closed";
+    std::optional<std::string> camera_text_;
+    float preview_[4] = {};
+    int preview_frames_ = 0;
 
     std::mutex mutex_;
     std::string reply_ = "return {}";

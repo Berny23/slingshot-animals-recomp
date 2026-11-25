@@ -91,7 +91,9 @@ set(ZLIB_BUILD_STATIC ON)
 set(ZLIB_INSTALL OFF)
 
 FetchContent_Declare(freetype
+    # a mirror second, tried when the first fails
     URL https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.xz
+        https://downloads.sourceforge.net/project/freetype/freetype2/2.15.0/freetype-2.15.0.tar.xz
     URL_HASH SHA256=93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5
     EXCLUDE_FROM_ALL SYSTEM)
 foreach(dep ZLIB BZIP2 PNG HARFBUZZ BROTLI)

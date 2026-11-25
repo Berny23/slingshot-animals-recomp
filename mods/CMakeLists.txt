@@ -4,7 +4,8 @@
 # A file named <game id>.cpp is built for that game only; a mod with such
 # files supports just those games, otherwise every game. common/ holds helpers
 # shared by mods. A mod's libraries are listed in its libraries.txt, one
-# target per line.
+# target per line; lines for the Android manifest (permissions, features) in its
+# android_manifest.xml.
 # Which mods start enabled is SLINGSHOT_DEFAULT_MODS (by default all but those
 # registered with SLINGSHOT_MOD_OFF); --mod, --enable-mod, --disable-mod and
 # SLINGSHOT_MODS change that at run time.
@@ -46,6 +47,11 @@ function(slingshot_add_mods target id)
             if(EXISTS "${dir}/libraries.txt")
                 file(STRINGS "${dir}/libraries.txt" libraries)
                 target_link_libraries(${target} PRIVATE ${libraries})
+            endif()
+            if(EXISTS "${dir}/android_manifest.xml")
+                file(READ "${dir}/android_manifest.xml" lines)
+                set_property(GLOBAL APPEND_STRING PROPERTY SLINGSHOT_ANDROID_MANIFEST_${id} "${lines}")
+                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${dir}/android_manifest.xml")
             endif()
         endif()
     endforeach()

@@ -86,8 +86,27 @@ function LeagueModernUtils:canShowScopePopup(...)
 end
 )";
 
-// The extra-bird offer: the video button goes, the gem button takes its place.
+// The extra-bird offer: the video button goes, the gem button takes its place. A label
+// too long for the room between the bird burst and the gem price (German) gets the
+// button's width, the gem and price stand right of the button.
 constexpr const char* kExtraBird = R"(
+local function fit_label(button)
+    local label, burst, gem
+    for _, c in ipairs(button.children or {}) do
+        if c.name == 'burstIcon' then burst = c
+        elseif c.name == 'icon' then gem = c
+        elseif c.text and not label then label = c end
+    end
+    if not (label and burst and gem and label.w and gem.w and burst.w and button.w) then return end
+    local scale = label.scaleX or 1
+    local left = burst.refX + burst.w * (burst.scaleX or 1) * 0.5
+    local right = gem.refX - gem.w * (gem.scaleX or 1) * 0.5
+    if label.w * scale <= right - left then return end
+    gem.refX = button.w * 0.5 + gem.w * (gem.scaleX or 1) * 0.5 + 6
+    right = button.w * 0.5 - 12
+    label.refX = (left + right) * 0.5
+    label:setScale(math.min(scale, (right - left) / label.w))
+end
 local init = ExtraBirdIngamePopup.init
 function ExtraBirdIngamePopup:init(...)
     local results = {init(self, ...)}
@@ -95,8 +114,9 @@ function ExtraBirdIngamePopup:init(...)
     if ad then
         self:removeChild(ad)
         if gems then gems.refY = ad.refY end
-        self:layout()
     end
+    if gems then fit_label(gems) end
+    self:layout()
     return unpack(results)
 end
 )";

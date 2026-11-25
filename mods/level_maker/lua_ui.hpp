@@ -122,20 +122,21 @@ function UI.panel(x, y, w, h, style, tint, alpha)
     local x0, y0 = math.floor(X + cw * n + 0.5), math.floor(Y + ch * n + 0.5)
     local x1, y1 = math.floor(X + W - bw * n + 0.5), math.floor(Y + Hh - bh * n + 0.5)
     local iw, ih = math.max(x1 - x0, 0), math.max(y1 - y0, 0)
-    local function at(name, px, py, sx, sy)
+    -- each piece placed by its edges, the stretched ones between the corners (pieces do
+    -- not overlap: the shadow is see-through). x, y: the piece's left and top, or (ex, ey
+    -- true) its right and bottom
+    local function at(name, x, y, sx, sy, ex, ey)
         local pw, ph = res.getSpriteBounds('', name)
         local ox, oy = res.getSpritePivot('', name)
-        -- stretched pieces: their pivot moves with the stretch; a pixel more on each side
-        -- covers the faded edges of the pieces next to them
-        local fx = sx == 'w' and (iw + 2) / pw or n
-        local fy = sy == 'h' and (ih + 2) / ph or n
-        if sx == 'w' then px = px - 1 + ox * fx end
-        if sy == 'h' then py = py - 1 + oy * fy end
-        if fx > 0 and fy > 0 then piece(name, px, py, fx, fy, tint, alpha) end
+        local fx = sx and iw / pw or n
+        local fy = sy and ih / ph or n
+        if ex then x = x - pw * fx end
+        if ey then y = y - ph * fy end
+        if fx > 0 and fy > 0 then piece(name, x + ox * fx, y + oy * fy, fx, fy, tint, alpha) end
     end
-    at(p .. names[1], x0, y0) at(p .. names[2], x0, y0, 'w') at(p .. names[3], x1, y0)
-    at(p .. names[4], x0, y0, nil, 'h') at(p .. names[5], x0, y0, 'w', 'h') at(p .. names[6], x1, y0, nil, 'h')
-    at(p .. names[7], x0, y1) at(p .. names[8], x0, y1, 'w') at(p .. names[9], x1, y1)
+    at(p .. names[1], x0, y0, nil, nil, true, true) at(p .. names[2], x0, y0, true, nil, false, true) at(p .. names[3], x1, y0, nil, nil, false, true)
+    at(p .. names[4], x0, y0, nil, true, true) at(p .. names[5], x0, y0, true, true) at(p .. names[6], x1, y0, nil, true)
+    at(p .. names[7], x0, y1, nil, nil, true) at(p .. names[8], x0, y1, true) at(p .. names[9], x1, y1)
 end
 
 -- The game's glossy button (left, middle, right), as tall as the button.
@@ -182,11 +183,38 @@ end
 
 -- A sprite at the game's own size, smaller where it does not fit w x h; sprites
 -- smaller than `least` (720 units) on both sides are scaled up to it, as far as they fit.
-function UI.icon(name, x, y, w, h, least)
+-- The game's own scale of its pictures, in 720 units.
+function UI.native()
+    local k = UI.k()
+    return (Scaling and Scaling.getScaleNum and Scaling.getScaleNum() or k) / k
+end
+
+-- Text broken into lines of at most maxw (720 units) at x, y (the first line's centre).
+function UI.wrap(s, x, y, size, font, maxw)
+    setFont(UI.font(font))
+    local lead = math.max(res.getFontLeading() or 30, 1)
+    local scale = size / lead
+    local lines, line = {}, nil
+    for word in string.gmatch(s, '%S+') do
+        local try = line and (line .. ' ' .. word) or word
+        if line and (res.getStringWidth(try) or 0) * scale > maxw then
+            lines[#lines + 1] = line
+            line = word
+        else
+            line = try
+        end
+    end
+    if line then lines[#lines + 1] = line end
+    for i, l in ipairs(lines) do UI.label(l, x, y + (i - 1) * size * 1.15, size, font, 'HCENTER', 'VCENTER', maxw) end
+    return #lines
+end
+
+-- (grow: how far past the game's own size it may be drawn, 1 if not given)
+function UI.icon(name, x, y, w, h, least, grow)
     local sw, sh = res.getSpriteBounds('', name)
     if not sw or sw <= 0 or not sh or sh <= 0 then return false end
     local k = UI.k()
-    local native = (Scaling and Scaling.getScaleNum and Scaling.getScaleNum() or k) / k
+    local native = UI.native() * (grow or 1)
     local fit = math.min(w / sw, h / sh)
     local s = math.min(native, fit)
     least = least or 28
@@ -270,6 +298,20 @@ function UI.button(x, y, w, h, label, opts)
     end
     if enabled then
         UI.area(ax, ay, aw, ah, {id = opts.id or label, tap = opts.tap, long = opts.long, drag = opts.drag})
+    end
+end
+
+-- One of the game's round buttons (icon), size across, centred on x, y, its label below
+-- it as the game's menus have; opts as UI.button's.
+-- The round buttons' pictures have margins of different sizes: these make them as large as MENU_YES.
+UI.ROUND_SCALE = {MENU_NO = 0.88, GESTURE_PLAY = 0.9, BUTTON_EMPTY = 1.05, BUTTON_EMBLEM_EDIT = 1.1}
+function UI.choice(x, y, size, icon, label, opts)
+    opts = opts or {}
+    opts.icon, opts.id = icon, opts.id or label
+    local b = size * (UI.ROUND_SCALE[icon] or 1)
+    UI.button(x - b * 0.5, y - b * 0.5, b, b, nil, opts)
+    if label then
+        UI.label(label, x, y + size * 0.5 + (opts.size or 30) * 0.7, opts.size or 30, opts.font or 'FONT_HEADER', 'HCENTER', 'VCENTER', opts.maxw or size * 1.6)
     end
 end
 

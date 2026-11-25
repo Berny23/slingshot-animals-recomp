@@ -60,20 +60,13 @@ bool save_qr_png(const std::string& text, const std::string& path) {
     return SDL_CloseIO(io) && ok;
 }
 
-std::optional<std::string> read_qr_picture(const std::string& path) {
-    size_t length = 0;
-    void* file = SDL_LoadFile(path.c_str(), &length);
-    if (!file) return std::nullopt;
-    int w, h, channels;
-    uint8_t* grey = stbi_load_from_memory(static_cast<const stbi_uc*>(file), int(length), &w, &h, &channels, 1);
-    SDL_free(file);
-    if (!grey) return std::nullopt;
+std::optional<std::string> read_qr_grey(const uint8_t* grey, int w, int h, int pitch) {
     std::optional<std::string> result;
     quirc* q = quirc_new();
     if (q && quirc_resize(q, w, h) >= 0) {
         int qw, qh;
         uint8_t* buffer = quirc_begin(q, &qw, &qh);
-        std::memcpy(buffer, grey, size_t(w) * h);
+        for (int y = 0; y < h; ++y) std::memcpy(buffer + size_t(y) * w, grey + size_t(y) * pitch, size_t(w));
         quirc_end(q);
         for (int i = 0; i < quirc_count(q) && !result; ++i) {
             quirc_code code;
@@ -87,6 +80,18 @@ std::optional<std::string> read_qr_picture(const std::string& path) {
         }
     }
     if (q) quirc_destroy(q);
+    return result;
+}
+
+std::optional<std::string> read_qr_picture(const std::string& path) {
+    size_t length = 0;
+    void* file = SDL_LoadFile(path.c_str(), &length);
+    if (!file) return std::nullopt;
+    int w, h, channels;
+    uint8_t* grey = stbi_load_from_memory(static_cast<const stbi_uc*>(file), int(length), &w, &h, &channels, 1);
+    SDL_free(file);
+    if (!grey) return std::nullopt;
+    auto result = read_qr_grey(grey, w, h, w);
     stbi_image_free(grey);
     return result;
 }

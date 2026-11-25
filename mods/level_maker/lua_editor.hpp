@@ -108,13 +108,15 @@ local function live(o) return o.name and objects.world[o.name] end
 local function shape(o)
     local w = live(o)
     if not w then return nil end
-    local hw, hh
-    if w.width and w.height and w.width > 0 then hw, hh = w.width * 0.5, w.height * 0.5
-    elseif w.radius then hw, hh = w.radius, w.radius
+    -- boxes have a width, circles a radius; polygons (-1 for both) their original size
+    local hw, hh, round
+    if (w.width or 0) > 0 and (w.height or 0) > 0 then hw, hh = w.width * 0.5, w.height * 0.5
+    elseif (w.radius or 0) > 0 then hw, hh, round = w.radius, w.radius, true
+    elseif (w.originalWidth or 0) > 0 and (w.originalHeight or 0) > 0 then hw, hh = w.originalWidth * 0.5, w.originalHeight * 0.5
     else hw, hh = 0.5, 0.5 end
     local a = w.angle or o.angle or 0
     local c, s = math.abs(math.cos(a)), math.abs(math.sin(a))
-    return {x = w.x, y = w.y, angle = a, hw = hw, hh = hh, ex = c * hw + s * hh, ey = s * hw + c * hh, round = w.radius ~= nil and not w.width}
+    return {x = w.x, y = w.y, angle = a, hw = hw, hh = hh, ex = c * hw + s * hh, ey = s * hw + c * hh, round = round}
 end
 
 local function corners(s)
@@ -509,7 +511,7 @@ function LM.enterEditor()
     local keep = ED.keep and ED.keep.level == L and ED.keep
     ED.undo, ED.redo = keep and keep.undo or {}, keep and keep.redo or {}
     ED.selected, ED.category, ED.menu, ED.drag, ED.connecting = nil, nil, nil, nil, nil
-    ED.trayPage = 1
+    ED.trayX = 0
     ED.hidden = {}
     ED.dirty = ED.dirty or false
     setPhysicsEnabled(false)
@@ -522,7 +524,12 @@ function LM.enterEditor()
     ED.hud = nil
     ED.attach()
     UI.onBack = function() ED.exitPrompt() end
-    UI.onWheel = function(n, x, y) ED.zoom(n > 0 and 1.15 or 1 / 1.15, x, y) end
+    UI.onWheel = function(n, x, y)
+        -- over the elements' strip: it scrolls
+        local sy = y / UI.k()
+        if ED.category and ED.trayScroll and sy > H - 210 and sy < H - 92 then return ED.trayScroll(n > 0 and -104 or 104) end
+        ED.zoom(n > 0 and 1.15 or 1 / 1.15, x, y)
+    end
     local cam = ED.savedCam
     if not cam then
         -- the whole level in view
@@ -697,7 +704,7 @@ function ED.onHostEvent(e)
             if o then ED.selected = o ED.menu = {kind = 'object', o = o} end
         end
     elseif kind == 'wheel' then
-        ED.zoom(e[2] > 0 and 1.15 or 1 / 1.15, e[3], e[4])
+        if UI.onWheel then UI.onWheel(e[2], e[3], e[4]) end
     elseif kind == 'key' then
         local f = KEYS[e[2]]
         if f then f() end
@@ -863,46 +870,74 @@ local function tray(c)
         UI.panel(-20, y0 - 52, w + 40, 60, 'dark')
         for i, tab in ipairs(c.tabs) do
             UI.button(10 + (i - 1) * tw, y0 - 48, tw - 6, 44, T('grp_' .. tab.group), {id = 'tab' .. tab.group, size = 22,
-                selected = c.tab == tab, tap = function() c.tab = tab ED.trayPage = 1 end})
+                selected = c.tab == tab, tap = function() c.tab = tab ED.trayX = 0 end})
         end
     end
     UI.panel(-20, y0, w + 40, 118, 'dark')
+    -- a strip that scrolls (dragged sideways, the wheel, the arrows a strip's width at a time)
     local size, gap = 96, 8
-    local per = math.max(1, math.floor((w - 140) / (size + gap)))
-    local pages = math.max(1, math.ceil(#items / per))
-    ED.trayPage = math.max(1, math.min(ED.trayPage, pages))
-    UI.button(4, y0 + 25, 60, 60, nil, {id = 'trayprev', icon = 'BUTTON_ARROW_LEFT', enabled = ED.trayPage > 1, tap = function() ED.trayPage = ED.trayPage - 1 end})
-    UI.button(w - 64, y0 + 25, 60, 60, nil, {id = 'traynext', icon = 'BUTTON_ARROW_RIGHT', enabled = ED.trayPage < pages, tap = function() ED.trayPage = ED.trayPage + 1 end})
-    for i = 1, per do
-        local def = items[(ED.trayPage - 1) * per + i]
-        if not def then break end
-        local x = 70 + (i - 1) * (size + gap)
-        UI.panel(x, y0 + 7, size, 96, 'dark')
-        UI.icon(blockTable.blocks[def].sprite, x + size * 0.5, y0 + 55, size - 12, 84)
-        UI.area(x, y0 + 7, size, 96, {id = 'item' .. def,
-            tap = function()
-                local px, py = world_at(screenWidth * 0.5, screenHeight * 0.3)
+    local left, right = 70, w - 70
+    local view = right - left
+    local most = math.max(0, #items * (size + gap) - gap - view)
+    ED.trayX = math.max(0, math.min(ED.trayX or 0, most))
+    local function scroll(by) ED.trayX = math.max(0, math.min(ED.trayX + by, most)) end
+    ED.trayScroll = function(by) scroll(by) end
+    UI.button(4, y0 + 25, 60, 60, nil, {id = 'trayprev', icon = 'BUTTON_ARROW_LEFT', enabled = ED.trayX > 0, tap = function() scroll(-view) end})
+    UI.button(w - 64, y0 + 25, 60, 60, nil, {id = 'traynext', icon = 'BUTTON_ARROW_RIGHT', enabled = ED.trayX < most, tap = function() scroll(view) end})
+    local k = UI.k()
+    -- dragged sideways: the strip moves; upwards out of it: the element goes into the level
+    local function strip_drag(def)
+        return function(phase, x, y)
+            if phase == 'start' then ED.trayDrag = {x = x, y = y, from = ED.trayX} return end
+            local t = ED.trayDrag
+            if not t then return end
+            if not ED.drag and not t.sideways and math.abs(x - t.x) > 12 * k and math.abs(x - t.x) > math.abs(y - t.y) then t.sideways = true end
+            if t.sideways then
+                ED.trayX = math.max(0, math.min(t.from - (x - t.x) / k, most))
+                if phase == 'end' then ED.trayDrag = nil end
+                return
+            end
+            if def and phase == 'move' and not ED.drag and y < (y0 - 60) * k then
+                local px, py = world_at(x, y)
                 ED.remember()
                 local o = ED.add(def, px, py)
                 if not o then table.remove(ED.undo) return end
-                drop(o)
-                if not settle(o, nil) or in_sling(o) then ED.delete(o) table.remove(ED.undo) ED.toast(T('no_room')) return end
-                if LM.isBird(def) then ED.birdsChanged() end
                 ED.selected = o
-            end,
-            drag = function(phase, x, y)
-                if phase == 'start' then return end
-                if phase == 'move' and not ED.drag and y < (y0 - 60) * UI.k() then
-                    local px, py = world_at(x, y)
+                drag_object(o, x, y, true)
+            end
+            if ED.drag then scene_drag(phase, x, y) end
+            if phase == 'end' then ED.trayDrag = nil end
+        end
+    end
+    UI.area(left, y0, view, 118, {id = 'strip', drag = strip_drag(nil)})
+    local cx, cy, cw, ch = res.getClipRect()
+    res.setClipRect(math.floor(left * k), math.floor(y0 * k), math.ceil(view * k), math.ceil(118 * k))
+    local first = math.max(1, math.floor(ED.trayX / (size + gap)) + 1)
+    for i = first, #items do
+        local def = items[i]
+        local x = left + (i - 1) * (size + gap) - ED.trayX
+        if x >= right then break end
+        UI.panel(x, y0 + 7, size, 96, 'dark')
+        UI.icon(blockTable.blocks[def].sprite, x + size * 0.5, y0 + 55, size - 12, 84)
+        -- the visible part only
+        local ax = math.max(x, left)
+        local aw = math.min(x + size, right) - ax
+        if aw > 0 then
+            UI.area(ax, y0 + 7, aw, 96, {id = 'item' .. def,
+                tap = function()
+                    local px, py = world_at(screenWidth * 0.5, screenHeight * 0.3)
                     ED.remember()
                     local o = ED.add(def, px, py)
                     if not o then table.remove(ED.undo) return end
+                    drop(o)
+                    if not settle(o, nil) or in_sling(o) then ED.delete(o) table.remove(ED.undo) ED.toast(T('no_room')) return end
+                    if LM.isBird(def) then ED.birdsChanged() end
                     ED.selected = o
-                    drag_object(o, x, y, true)
-                end
-                if ED.drag then scene_drag(phase, x, y) end
-            end})
+                end,
+                drag = strip_drag(def)})
+        end
     end
+    res.setClipRect(cx or 0, cy or 0, cw or screenWidth, ch or screenHeight)
 end
 
 local function object_menu(m)
@@ -1050,11 +1085,24 @@ end
 local function exit_menu()
     local w = W()
     UI.box(0, 0, w, H, C.dim)
-    UI.panel(w * 0.5 - 380, 200, 760, 300, 'popup')
-    UI.label(T('save_changes'), w * 0.5, 280, 32, 'FONT_BASIC', 'HCENTER', 'VCENTER', 700)
-    UI.button(w * 0.5 - 350, 380, 220, 80, T('save'), {id = 'xs', icon = 'CHECKMARK', color = C.play, tap = function() if ED.save() then ED.exit() end end})
-    UI.button(w * 0.5 - 110, 380, 220, 80, T('discard'), {id = 'xd', icon = 'MENU_NO', color = C.danger, tap = function() ED.exit() end})
-    UI.button(w * 0.5 + 130, 380, 220, 80, T('cancel'), {id = 'xc', icon = 'BUTTON_ARROW_LEFT', tap = function() ED.menu = nil end})
+    UI.panel(w * 0.5 - 380, 180, 760, 350, 'popup')
+    UI.label(T('save_changes'), w * 0.5, 245, 40, 'FONT_HEADER', 'HCENTER', 'VCENTER', 700)
+    UI.choice(w * 0.5 - 220, 370, 120, 'MENU_YES', T('save'), {id = 'xs', tap = function() if ED.save() then ED.exit() end end})
+    UI.choice(w * 0.5, 370, 120, 'MENU_NO', T('discard'), {id = 'xd', tap = function() ED.exit() end})
+    UI.choice(w * 0.5 + 220, 370, 120, 'GESTURE_PLAY', T('cancel'), {id = 'xc', tap = function() ED.menu = nil end})
+end
+
+-- The copy button's picture: the element twice, one behind the other.
+local function copy_icon(o, x, y)
+    local d = blockTable.blocks[o.def]
+    if not d or not d.sprite then return UI.label('x2', x, y, 30, '=FONT_BASIC') end
+    UI.sprite(d.sprite, x - 7, y - 7, 34, 34, 0.55)
+    UI.sprite(d.sprite, x + 6, y + 6, 34, 34)
+end
+-- A white dot with a brown edge, as the game's button icons are drawn.
+local function dot(x, y)
+    UI.round(x - 7, y - 7, 14, 14, {0.45, 0.22, 0.05}, 1, 7)
+    UI.round(x - 5, y - 5, 10, 10, {1, 1, 1}, 1, 5)
 end
 
 function ED.build()
@@ -1077,11 +1125,14 @@ function ED.build()
         local bx = w - 16 - 4 * 100
         local by = H - (ED.category and (#ED.category.tabs > 1 and 262 or 210) or 100) - 90
         UI.button(bx, by, 76, 76, nil, {id = 'rot', glyph = '90°', tip = T('rotate'), tap = function() ED.rotate(s, math.pi * 0.5) end})
-        UI.button(bx + 100, by, 76, 76, nil, {id = 'dup', glyph = 'x2', tip = T('copy_short'), tap = function() ED.copy(s) end})
-        UI.button(bx + 200, by, 76, 76, nil, {id = 'del', icon = 'MENU_NO', tip = T('delete'), tap = function() ED.delete(s) end})
-        UI.button(bx + 300, by, 76, 76, nil, {id = 'more', glyph = '...', tip = T('more'), tap = function()
+        UI.button(bx + 100, by, 76, 76, nil, {id = 'dup', icon = 'BUTTON_EMPTY', tip = T('copy_short'), tap = function() ED.copy(s) end})
+        copy_icon(s, bx + 138, by + 36)
+        -- MENU_NO fills its picture with the button: as large as the others
+        UI.button(bx + 205, by + 5, 66, 66, nil, {id = 'del', icon = 'MENU_NO', tip = T('delete'), tap = function() ED.delete(s) end})
+        UI.button(bx + 300, by, 76, 76, nil, {id = 'more', icon = 'BUTTON_EMPTY', tip = T('more'), tap = function()
             if ED.menu and ED.menu.kind == 'object' and ED.menu.o == s then ED.menu = nil else ED.menu = {kind = 'object', o = s} end
         end})
+        for i = -1, 1 do dot(bx + 338 + i * 15, by + 36) end
     end
     -- categories
     local cats = ED.CATEGORIES
@@ -1091,7 +1142,7 @@ function ED.build()
         local x = 16 + (i - 1) * bw
         UI.button(x + 3, H - 94, bw - 6, 88, nil, {id = 'cat' .. c.id, selected = ED.category == c, tap = function()
             ED.category = ED.category ~= c and c or nil
-            ED.trayPage = 1
+            ED.trayX = 0
         end})
         -- inside the button's border
         if c.icon and blockTable.blocks[c.icon] then UI.icon(blockTable.blocks[c.icon].sprite, x + bw * 0.5, H - 63, bw - 44, 36) end

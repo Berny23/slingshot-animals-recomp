@@ -52,7 +52,7 @@ All mods but those marked *(off)* are on by default. In the builder, *Advanced* 
 | `game-statistics` | all | Statistics page with achievements and progress to 100 %; the achievements also count in RecompLauncher (Recomp Achievements) |
 | `offline-league` | Classic | Mighty League without servers |
 | `level-weather` | Classic | Rain in Surf and Turf's stormy levels, as made for them |
-| `level-maker` | Classic | Build levels with every element and background of the game, play them and share them as a code or QR picture (once beaten) |
+| `level-maker` | Classic | Build levels with every element and background of the game, play them and share them as a code or QR code (once beaten), also read with a camera |
 | `offline-tournament` | Seasons | Pig Challenge without servers: weeks open one after another, all weeks replayable after the last |
 | `composite-audio` | Star Wars, Star Wars II | Plays the menu music and power-up sounds again |
 | `offline-assets` | Star Wars II | Starts without the download server (see below) |

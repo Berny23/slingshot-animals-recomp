@@ -523,6 +523,7 @@ LM.WEATHER = {theme15rain = true, lmSnow = true, lmConfetti = true}
 -- mode: 'play' (a saved or loaded level), 'test' (from the editor), 'edit'
 function LM.start(L, mode)
     LM.level, LM.mode, LM.used, LM.cheered, LM.boosters = L, mode, {}, nil, {}
+    if LM.env then LM.installAchievements(LM.env) end  -- the processor exists only after the game's start
     LM.data = LM.loaded(L)
     LM.ensureEpisode()
     local two, three = LM.starLimits(L)
@@ -589,8 +590,49 @@ local function wrap(t, name, make)
     t[name] = w
 end
 
--- The level's HUD: the pause menu's Menu button leaves as the level end's does; while
--- testing or editing, no shop buttons and no currency counters.
+-- Achievements in custom levels: only those of the common counters (playtime, blocks,
+-- pigs, birds shot, backward shots) can unlock. Nothing that marks a level feat is kept:
+-- not Wilhelm Tell's and Bull's Eye's flags, not stalactites and gems destroyed, and bird
+-- introductions seen there last only until the game ends (the achievements of the
+-- birds come from them).
+LM.ACHIEVEMENTS_IN_CUSTOM = {
+    ['Angry Birds Fan'] = true, ['True Angry Birds Fan'] = true, ['Angry Birds Addict'] = true,
+    ['Block Smasher'] = true, ['Smash Maniac'] = true, ['Pig Popper'] = true, ['Bird Slinger'] = true,
+    ['Backward Compatibility'] = true, ['Woodpecker'] = true, ['Icepicker'] = true, ['Stonecutter'] = true,
+}
+local RARE_MATERIALS = {amber = true, stalaktite_tip = true}
+local function custom() return LM.active() and LM.mode ~= nil end
+
+function LM.installAchievements(env)
+    for _, t in pairs({env.AchievementProcessor or false, env.achievementProcessor or false}) do
+        if t then
+            wrap(t, 'addToAchievementUnlockQueue', function(f) return function(self, name, ...)
+                if custom() and not LM.ACHIEVEMENTS_IN_CUSTOM[name] then return end
+                return f(self, name, ...)
+            end end)
+        end
+    end
+    local sw = env.settingsWrapper
+    if type(sw) ~= 'table' then return end
+    for _, name in ipairs({'setWilhelmTell', 'setBullsEye'}) do
+        wrap(sw, name, function(f) return function(...)
+            if custom() then return end
+            return f(...)
+        end end)
+    end
+    wrap(sw, 'incrementBlocksDestroyed', function(f) return function(self, material, ...)
+        if custom() and RARE_MATERIALS[material] then return end
+        return f(self, material, ...)
+    end end)
+    wrap(sw, 'getTutorials', function(f) return function(self, ...)
+        if not custom() then return f(self, ...) end
+        LM.tutorials = LM.tutorials or setmetatable({}, {__index = function(_, k) return f(self)[k] end})
+        return LM.tutorials
+    end end)
+end
+
+-- The level's HUD: the pause menu's Menu button leaves as the level end's does; in a
+-- custom level no shop buttons and no currency counters.
 local hidden = {}
 local function show(o, key, on)
     if not o then return end
@@ -610,9 +652,9 @@ local function mute(o, key, on)
 end
 function LM.hud()
     local root = menuManager and menuManager.menus and menuManager.menus.root
-    local building = LM.active() and (LM.mode == 'test' or LM.mode == 'edit')
+    local custom = LM.active() and LM.mode ~= nil
     local igc = ingameCurrencySystem
-    if igc and igc.ingameCurrencyFrame then show(igc.ingameCurrencyFrame, 'currency', not building) end
+    if igc and igc.ingameCurrencyFrame then show(igc.ingameCurrencyFrame, 'currency', not custom) end
     if not root or root.name ~= 'gameHud' then return end
     local cls = getmetatable(root) and getmetatable(root).__index
     if type(cls) == 'table' then
@@ -624,9 +666,8 @@ function LM.hud()
     local pause = root:getChild('pausePage')
     local frame = pause and pause:getChild('dummyFrame')
     local middle = frame and frame:getChild('middleButtonsFrame')
-    show(middle and middle:getChild('shop_button'), 'pauseShop', not building)
+    show(middle and middle:getChild('shop_button'), 'pauseShop', not custom)
     local powerups = root:getChild('powerup_button')
-    local custom = LM.active() and LM.mode ~= nil
     mute(powerups and powerups:getChild('powerup_shop_button'), 'powerupShop', not custom)
     -- the "+" (buy more) on the power-ups and the TNT drop
     for i = 1, 4 do
@@ -794,6 +835,19 @@ function LM.install(env)
         wrap(igcValueClass, 'getIGCValue', function(f) return function(self, name, ...)
             if LM.playing() and LM.left(name) then return LM.left(name) end
             return f(self, name, ...)
+        end end)
+    end
+    LM.installAchievements(env)
+    -- No offer of an extra bird for gems in custom levels: not on failing, nor from the
+    -- HUD's skip to the level end (custom levels are in a league episode).
+    wrap(env, '_canDisplayExtraBirdPopup', function(f) return function(...)
+        if LM.active() and LM.mode then return false end
+        return f(...)
+    end end)
+    if env.league then
+        wrap(env.league, 'displayModernPopup', function(f) return function(popup, ...)
+            if LM.active() and LM.mode and type(popup) == 'table' and popup.productId == 'bird_reward' then return end
+            return f(popup, ...)
         end end)
     end
     -- No Mighty Eagle in custom levels.

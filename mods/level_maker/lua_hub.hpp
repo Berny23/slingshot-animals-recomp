@@ -28,6 +28,8 @@ end
 -- ---- pages
 function Hub.push(page) Hub.stack[#Hub.stack + 1] = page Hub.page = page end
 function Hub.pop()
+    local top = Hub.stack[#Hub.stack]
+    if top and top.leave then top.leave() end
     Hub.stack[#Hub.stack] = nil
     Hub.page = Hub.stack[#Hub.stack]
     if not Hub.page then Hub.close() end
@@ -36,11 +38,11 @@ function Hub.message(text, after) Hub.push({kind = 'message', text = text, after
 function Hub.confirm(text, yes) Hub.push({kind = 'confirm', text = text, yes = yes}) end
 
 local function stats(L)
-    local pigs, birds = 0, 0
+    local pigs, birds, other = 0, 0, 0
     for _, o in ipairs(L.objects) do
-        if LM.isPig(o.def) then pigs = pigs + 1 elseif LM.isBird(o.def) then birds = birds + 1 end
+        if LM.isPig(o.def) then pigs = pigs + 1 elseif LM.isBird(o.def) then birds = birds + 1 else other = other + 1 end
     end
-    return pigs, birds
+    return pigs, birds, other
 end
 
 -- A level page: {slot = n} for a saved level, {level, code} for a loaded one.
@@ -101,134 +103,206 @@ function Hub.wait(cmd, done)
 end
 
 -- ---- drawing
-local function header(title, back)
+-- A box of pw x ph in the middle with its title and close button; returns its left and top.
+local function popup(title, pw, ph, back)
     local w = W()
+    local px, py = math.floor((w - pw) * 0.5), math.floor((H - ph) * 0.5)
     UI.box(0, 0, w, H, C.dim)
-    UI.panel(40, 30, w - 80, H - 60, 'popup')
-    UI.label(title, w * 0.5, 80, 46, 'FONT_HEADER')
-    UI.button(w - 120, 46, 64, 64, nil, {id = 'close', icon = 'MENU_NO', tap = back or Hub.pop})
+    UI.panel(px, py, pw, ph, 'popup')
+    UI.label(title, w * 0.5, py + 52, 44, 'FONT_HEADER', 'HCENTER', 'VCENTER', pw - 200)
+    UI.button(px + pw - 78, py + 14, 64, 64, nil, {id = 'close', icon = 'MENU_NO', tap = back or Hub.pop})
+    return px, py
 end
 
 local function stars_row(n, x, y, size)
     for i = 1, 3 do
-        if not UI.sprite(i <= (n or 0) and 'BEST_STAR_YELLOW' or 'BEST_STAR_GREY', x + (i - 2) * size * 1.1, y, size, size) then
-            UI.label(i <= (n or 0) and '*' or '-', x + (i - 2) * size * 1.1, y, size)
+        local sx = x + (i - 2) * size * 1.05
+        if not UI.icon(i <= (n or 0) and 'UI_SCORE_STAR_YELLOW' or 'UI_SCORE_STAR_GREY', sx, y, size, size, 0, 1.2) then
+            UI.label(i <= (n or 0) and '*' or '-', sx, y, size)
         end
     end
 end
 
-local draw = {}
-
-function draw.home()
-    local w = W()
-    header(T('title'), Hub.close)
-    local bw = (w - 200) * 0.5
-    UI.button(80, 150, bw, H - 260, T('load'), {id = 'load', size = 52, icon = 'GESTURE_PLAY', color = C.play, tap = function() Hub.push({kind = 'list', mode = 'load', page = 1}) end})
-    UI.button(w - 80 - bw, 150, bw, H - 260, T('build'), {id = 'build', size = 52, icon = 'BUTTON_EMBLEM_EDIT', tap = function() Hub.push({kind = 'list', mode = 'build', page = 1}) end})
-    UI.label(T('load_hint'), 80 + bw * 0.5, H - 140, 24, 'FONT_BASIC', 'HCENTER', 'VCENTER', bw - 20)
-    UI.label(T('build_hint'), w - 80 - bw * 0.5, H - 140, 24, 'FONT_BASIC', 'HCENTER', 'VCENTER', bw - 20)
+-- Pictures on an empty round button, white with a brown edge as the game's icons are.
+local BROWN, WHITE = {0.45, 0.22, 0.05}, {1, 1, 1}
+-- a QR code: its three corner squares
+local function qr_icon(x, y)
+    for _, c in ipairs({{-1, -1}, {1, -1}, {-1, 1}}) do
+        local cx, cy = x + c[1] * 11, y + c[2] * 11
+        UI.round(cx - 9, cy - 9, 18, 18, BROWN, 1, 4)
+        UI.round(cx - 6, cy - 6, 12, 12, WHITE, 1, 3)
+        UI.round(cx - 4, cy - 4, 8, 8, BROWN, 1, 2)
+    end
+    UI.round(x + 5, y + 5, 12, 12, WHITE, 1, 2)
+end
+-- a camera
+local function camera_icon(x, y)
+    UI.round(x - 10, y - 20, 20, 10, BROWN, 1, 3)
+    UI.round(x - 24, y - 14, 48, 32, BROWN, 1, 7)
+    UI.round(x - 21, y - 11, 42, 26, WHITE, 1, 5)
+    UI.round(x - 10, y - 8, 20, 20, BROWN, 1, 10)
+    UI.round(x - 6, y - 4, 12, 12, WHITE, 1, 6)
 end
 
-local PER_PAGE = 8
+local draw = {}
+
+-- The shop's tiles (its sheet is loaded while the hub is open), at the game's own size.
+local TILES = {load = 'SHOP_MAIN_GEMS_COINS_BOX', build = 'SHOP_BG_TALL_BLUE'}
+function draw.home()
+    local w = W()
+    local nat = UI.native()
+    local tw, th = 237 * nat, 348 * nat
+    local gap, cell = 50, math.max(tw, 270)
+    local pw, ph = cell * 2 + gap + 80, th + 190
+    local px, py = (w - pw) * 0.5, (H - ph) * 0.5
+    UI.box(0, 0, w, H, C.dim)
+    UI.panel(px, py, pw, ph, 'popup')
+    UI.label(T('title'), w * 0.5, py + 52, 44, 'FONT_HEADER')
+    UI.button(px + pw - 78, py + 14, 64, 64, nil, {id = 'close', icon = 'MENU_NO', tap = Hub.close})
+    for i, it in ipairs({
+        {'load', 'GESTURE_PLAY', T('load'), T('load_hint'), function() Hub.push({kind = 'list', mode = 'load', page = 1}) end},
+        {'build', 'BUTTON_EMBLEM_EDIT', T('build'), T('build_hint'), function() Hub.push({kind = 'list', mode = 'build', page = 1}) end},
+    }) do
+        local cx = px + 40 + cell * 0.5 + (i - 1) * (cell + gap)
+        local x, y = cx - tw * 0.5, py + 100
+        local pressed = UI.pressed and UI.pressed.id == it[1]
+        local f = pressed and 0.95 or 1
+        if not UI.sprite(TILES[it[1]], cx, y + th * 0.5, tw * f, th * f) then
+            UI.panel(x, y, tw, th, 'paper', it[1] == 'load' and {0.55, 0.9, 0.4} or {0.5, 0.72, 1})
+        end
+        UI.icon(it[2], cx, y + th * 0.4, tw, th, 0, 1.2)
+        UI.label(it[3], cx, y + th * 0.78, 44, 'FONT_HEADER', 'HCENTER', 'VCENTER', tw - 20)
+        UI.area(x, y, tw, th, {id = it[1], tap = it[5]})
+        UI.wrap(it[4], cx, y + th + 22, 22, 'FONT_BASIC', cell + 20)
+    end
+end
+
+-- The saved levels as the game's level buttons, 8 x 2 a page.
+local COLS, ROWS = 8, 2
+local PER_PAGE = COLS * ROWS
 function draw.list(page)
     local w = W()
-    header(page.mode == 'load' and T('load') or T('build'))
-    local y = 130
+    local cell, rowh = 110, 150
+    local pw, ph = COLS * cell + 160, 650
+    local px, py = popup(page.mode == 'load' and T('load') or T('build'), pw, ph)
+    local cx = px + pw * 0.5
+    -- what makes a new entry: round buttons with their names
+    local actions
     if page.mode == 'load' then
-        local bw = (w - 200) * 0.5
-        UI.button(80, y, bw, 80, T('paste'), {id = 'paste', icon = 'BUTTON_MENU', color = C.play, tap = function()
-            local r = LM.host('paste')
-            Hub.load(r.text)
-        end})
-        UI.button(w - 80 - bw, y, bw, 80, T('picture'), {id = 'picture', icon = 'BUTTON_FULLSCREEN', color = C.play, tap = function()
-            Hub.wait('open_picture', function(r)
-                if r.code then Hub.load(r.code)
-                elseif r.error then Hub.message(T(r.error) or r.error) end
-            end)
-        end})
+        actions = {
+            {'paste', 'BUTTON_MENU', T('paste'), function() Hub.load(LM.host('paste').text) end},
+            {'picture', 'BUTTON_EMPTY', T('picture'), function()
+                Hub.wait('open_picture', function(r)
+                    if r.code then Hub.load(r.code)
+                    elseif r.error then Hub.message(T(r.error) or r.error) end
+                end)
+            end},
+        }
+        -- the camera, where the device has one
+        if Hub.camera == nil then
+            local r = LM.host('camera_available')
+            if not r.pending then Hub.camera = r.ok == true end
+        end
+        if Hub.camera then
+            table.insert(actions, 2, {'scan', 'BUTTON_EMPTY', T('scan'), function() Hub.push({kind = 'scan'}) end})
+        end
     else
-        UI.button(80, y, w - 160, 80, T('new_level'), {id = 'new', icon = 'BUTTON_EMBLEM_EDIT', color = C.play, tap = Hub.newLevel})
+        actions = {{'new', 'BUTTON_EMBLEM_EDIT', T('new_level'), Hub.newLevel}}
     end
-    y = y + 110
+    for i, a in ipairs(actions) do
+        local ax = cx + (i - (#actions + 1) * 0.5) * 260
+        UI.choice(ax, py + 150, 92, a[2], a[3], {id = a[1], size = 26, maxw = 250, tap = a[4]})
+        if a[1] == 'picture' then qr_icon(ax, py + 147) elseif a[1] == 'scan' then camera_icon(ax, py + 149) end
+    end
     local slots = LM.store().slots
-    UI.label(T('my_levels') .. '  (' .. #slots .. ' / ' .. LM.MAX_SLOTS .. ')', 80, y, 30, 'FONT_BASIC', 'LEFT')
-    y = y + 30
+    UI.label(T('my_levels') .. '  (' .. #slots .. ' / ' .. LM.MAX_SLOTS .. ')', cx, py + 262, 26)
     local pages = math.max(1, math.ceil(#slots / PER_PAGE))
     page.page = math.max(1, math.min(page.page or 1, pages))
-    local cols = 4
-    local tw, th = (w - 160 - (cols - 1) * 20) / cols, 120
+    local gx, gy = cx - COLS * cell * 0.5, py + 290
     for i = 1, PER_PAGE do
         local n = (page.page - 1) * PER_PAGE + i
         local s = slots[n]
         if not s then break end
-        local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
-        local x, ty = 80 + col * (tw + 20), y + row * (th + 16)
-        UI.button(x, ty, tw, th, nil, {id = 'slot' .. n, color = C.button, tap = function()
+        local x = gx + ((i - 1) % COLS) * cell + cell * 0.5
+        local y = gy + math.floor((i - 1) / COLS) * rowh + 52
+        local pressed = UI.pressed and UI.pressed.id == 'slot' .. n
+        UI.icon('LEVEL_BUTTON_EMPTY', x, y, pressed and 90 or 96, pressed and 90 or 102, 0)
+        UI.label(tostring(n), x, y - 4, 44, 'FONT_HEADER')
+        stars_row(s.stars, x, y + 66, 24)
+        UI.area(x - 48, y - 51, 96, 102, {id = 'slot' .. n, tap = function()
             if page.mode == 'load' then Hub.openLevel(n)
             else
-                local L, err = LM.decode(s.code)
+                local L = LM.decode(s.code)
                 if not L then return Hub.message(T('damaged')) end
                 Hub.edit({slot = n, level = L, code = s.code})
             end
         end})
-        UI.label(T('level') .. ' ' .. n, x + tw * 0.5, ty + 30, 30, 'FONT_HEADER')
-        stars_row(s.stars, x + tw * 0.5, ty + 68, 30)
-        UI.label((s.best or 0) > 0 and tostring(s.best) or (s.beaten and '' or T('not_beaten')), x + tw * 0.5, ty + 100, 22)
     end
-    if #slots == 0 then UI.label(T('no_levels'), w * 0.5, y + 120, 28) end
+    if #slots == 0 then UI.label(T('no_levels'), cx, gy + 120, 28) end
     if pages > 1 then
-        UI.button(80, H - 110, 90, 60, nil, {id = 'prev', icon = 'BUTTON_ARROW_LEFT', enabled = page.page > 1, tap = function() page.page = page.page - 1 end})
-        UI.button(w - 170, H - 110, 90, 60, nil, {id = 'next', icon = 'BUTTON_ARROW_RIGHT', enabled = page.page < pages, tap = function() page.page = page.page + 1 end})
-        UI.label(page.page .. ' / ' .. pages, w * 0.5, H - 80, 28)
+        local ay = gy + rowh
+        UI.button(px + 20, ay - 40, 40, 80, nil, {id = 'prev', icon = 'BUTTON_LEVELSELECT_ARROW_LEFT', enabled = page.page > 1, tap = function() page.page = page.page - 1 end})
+        UI.button(px + pw - 60, ay - 40, 40, 80, nil, {id = 'next', icon = 'BUTTON_LEVELSELECT_ARROW_RIGHT', enabled = page.page < pages, tap = function() page.page = page.page + 1 end})
+        UI.label(page.page .. ' / ' .. pages, cx, py + ph - 28, 24)
     end
 end
 
+-- One number with its picture (the level's pigs, birds: the score's icons, else the element's).
+local function count(sprites, n, x, y)
+    local shown = false
+    for _, sprite in ipairs(sprites) do
+        if not shown then shown = UI.icon(sprite, x - 28, y, 46, 46, 0, 1.2) end
+    end
+    if shown then UI.label(tostring(n), x + 6, y, 36, 'FONT_HEADER', 'LEFT')
+    else UI.label(tostring(n), x, y, 36, 'FONT_HEADER') end
+end
+
+
 function draw.level(page)
-    local w = W()
     local L = page.level
     local saved = page.slot ~= nil
-    header(saved and (T('level') .. ' ' .. page.slot) or T('loaded_level'))
     local s = saved and LM.store().slots[page.slot] or nil
-    local pigs, birds = stats(L)
-    local y = 150
-    UI.label(T('pigs') .. ': ' .. pigs .. '    ' .. T('birds') .. ': ' .. birds .. '    ' .. T('objects') .. ': ' .. #L.objects,
-             w * 0.5, y, 28)
-    if s then
-        stars_row(s.stars, w * 0.5, y + 50, 40)
-        UI.label(T('best') .. ': ' .. tostring(s.best or 0), w * 0.5, y + 95, 26)
-    end
-    UI.button(w * 0.5 - 200, 290, 400, 170, T('play'), {id = 'play', size = 64, icon = 'GESTURE_PLAY', color = C.play, tap = function() Hub.play(page) end})
     local beaten = s and s.beaten == page.code
-    local bw, by = 220, 500
+    local pw, ph = 820, 630
+    local px, py = popup(saved and (T('level') .. ' ' .. page.slot) or T('loaded_level'), pw, ph)
+    local cx = px + pw * 0.5
+    local pigs, birds, other = stats(L)
+    stars_row(s and s.stars or 0, cx, py + 130, 40)
+    if s then UI.label(T('best') .. ': ' .. tostring(s.best or 0), cx, py + 182, 24) end
+    -- on the left: pigs, birds, the other elements
+    local blocks = blockTable.blocks
+    count({'UI_SCORE_PIG', blocks.MediumPiglette.sprite}, pigs, px + 110, py + 140)
+    count({blocks.RedBird.sprite, 'SOUNDBOARD_1_BIRD_RED', 'UI_SCORE_BIRD'}, birds, px + 110, py + 205)
+    count({'SOUNDBOARD_1_BLOCK_WOOD', blocks.WoodBlock9.sprite}, other, px + 110, py + 270)
+    UI.choice(cx, py + 295, 120, 'GESTURE_PLAY', T('play'), {id = 'play', size = 40, tap = function() Hub.play(page) end})
     local buttons = {}
-    if not saved then buttons[#buttons + 1] = {T('save'), function() Hub.save(page) end, nil, 'CHECKMARK'} end
-    buttons[#buttons + 1] = {T('edit'), function() Hub.edit(page) end, nil, 'BUTTON_EMBLEM_EDIT'}
-    buttons[#buttons + 1] = {T('share'), function()
+    if not saved then buttons[#buttons + 1] = {'save', 'MENU_YES', T('save'), function() Hub.save(page) end} end
+    buttons[#buttons + 1] = {'edit', 'BUTTON_EMBLEM_EDIT', T('edit'), function() Hub.edit(page) end}
+    buttons[#buttons + 1] = {'share', 'BUTTON_EXTERNAL_LINK', T('share'), function()
         if beaten then Hub.push({kind = 'share', code = page.code}) else Hub.message(T('beat_first')) end
-    end, beaten and C.button or C.off, 'BUTTON_EXTERNAL_LINK'}
-    if saved then buttons[#buttons + 1] = {T('delete'), function()
+    end, not beaten}
+    if saved then buttons[#buttons + 1] = {'delete', 'MENU_NO', T('delete'), function()
         Hub.confirm(T('delete_confirm'), function()
             table.remove(LM.store().slots, page.slot)
             LM.saveStore()
             Hub.pop()
         end)
-    end, C.danger, 'MENU_NO'} end
-    local total = #buttons * bw + (#buttons - 1) * 20
+    end} end
     for i, b in ipairs(buttons) do
-        UI.button(w * 0.5 - total * 0.5 + (i - 1) * (bw + 20), by, bw, 80, b[1], {id = 'b' .. i, color = b[3], icon = b[4], tap = b[2]})
+        UI.choice(cx + (i - (#buttons + 1) * 0.5) * 170, py + 490, 84, b[2], b[3], {id = b[1], size = 24, maxw = 165, grey = b[5], tap = b[4]})
     end
-    if not beaten then UI.label(T('beat_first'), w * 0.5, by + 120, 22) end
+    if not beaten then UI.label(T('beat_first'), cx, py + ph - 26, 22, 'FONT_BASIC', 'HCENTER', 'VCENTER', pw - 60) end
 end
 
 function draw.share(page)
-    local w = W()
-    header(T('share'))
+    local pw, ph = 900, 560
+    local px, py = popup(T('share'), pw, ph)
     if not page.qr then
         local r = LM.host('qr', page.code)
         page.qr, page.size = r.modules or '', r.size or 0
     end
     local size = 400
-    local x0, y0 = 100, 140
+    local x0, y0 = px + 50, py + 110
     UI.panel(x0 - 10, y0 - 10, size + 20, size + 20, 'paper')
     UI.box(x0 + 10, y0 + 10, size - 20, size - 20, {1, 1, 1, 1})
     if page.size > 0 then
@@ -255,27 +329,55 @@ function draw.share(page)
     else
         UI.label(T('too_big'), x0 + size * 0.5, y0 + size * 0.5, 26, 'FONT_BASIC', 'HCENTER', 'VCENTER', size - 20)
     end
-    local x = x0 + size + 60
-    local bw = w - x - 80
-    UI.label(T('share_hint'), x + bw * 0.5, 170, 24, 'FONT_BASIC', 'HCENTER', 'VCENTER', bw)
-    UI.label(string.len(page.code) .. ' ' .. T('characters'), x + bw * 0.5, 210, 24)
-    UI.button(x, 260, bw, 90, T('copy'), {id = 'copy', icon = 'BUTTON_MENU', color = C.play, tap = function()
+    local x = x0 + size + 40
+    local bw = px + pw - 40 - x
+    local cx = x + bw * 0.5
+    UI.wrap(T('share_hint'), cx, y0 + 20, 24, 'FONT_BASIC', bw)
+    UI.label(string.len(page.code) .. ' ' .. T('characters'), cx, y0 + 110, 24)
+    UI.choice(cx - 95, y0 + 230, 92, 'BUTTON_MENU', T('copy'), {id = 'copy', size = 24, maxw = 180, tap = function()
         local r = LM.host('copy', page.code)
         Hub.message(r.ok and T('copied') or T('failed'))
     end})
-    UI.button(x, 380, bw, 90, T('save_picture'), {id = 'savepic', icon = 'BUTTON_FULLSCREEN', enabled = page.size > 0, tap = function()
+    UI.choice(cx + 95, y0 + 230, 92, 'BUTTON_EMPTY', T('save_picture'), {id = 'savepic', size = 24, maxw = 180, enabled = page.size > 0, tap = function()
         Hub.wait('save_picture\n' .. page.code, function(r)
             if r.ok then Hub.message(T('saved')) elseif r.error then Hub.message(T(r.error) or r.error) end
         end)
     end})
+    qr_icon(cx + 95, y0 + 227)
+end
+
+-- The camera's picture (drawn by the host over the game in the frame given each frame)
+-- until it reads a QR code.
+function draw.scan(page)
+    local pw, ph = 900, 640
+    local px, py = popup(T('scan'), pw, ph)
+    if not page.started then
+        page.started = true
+        LM.host('camera_open')
+        page.leave = function() LM.host('camera_close') end
+    end
+    local x, y, w, h = px + 40, py + 96, pw - 80, (pw - 80) * 9 / 16
+    UI.box(x, y, w, h, {0, 0, 0, 1})
+    local k = UI.k()
+    local r = LM.host('camera', string.format('%d %d %d %d', x * k, y * k, w * k, h * k))
+    if r.code then
+        Hub.pop()
+        return Hub.load(r.code)
+    end
+    if r.state == 'denied' or r.state == 'none' then
+        Hub.pop()
+        return Hub.message(T(r.state == 'denied' and 'camera_denied' or 'no_camera'))
+    end
+    if r.state ~= 'running' then UI.label(T('camera_waiting'), x + w * 0.5, y + h * 0.5, 30) end
+    UI.wrap(T('scan_hint'), px + pw * 0.5, y + h + 30, 26, 'FONT_BASIC', pw - 80)
 end
 
 function draw.message(page)
     local w = W()
     UI.box(0, 0, w, H, C.dim)
-    UI.panel(w * 0.5 - 360, 220, 720, 280, 'popup')
-    UI.label(page.text, w * 0.5, 320, 30, 'FONT_BASIC', 'HCENTER', 'VCENTER', 660)
-    UI.button(w * 0.5 - 100, 400, 200, 76, T('ok'), {id = 'ok', icon = 'MENU_YES', color = C.play, tap = function()
+    UI.panel(w * 0.5 - 380, 170, 760, 380, 'popup')
+    UI.label(page.text, w * 0.5, 270, 32, 'FONT_BASIC', 'HCENTER', 'VCENTER', 680)
+    UI.choice(w * 0.5, 410, 120, 'MENU_YES', T('ok'), {id = 'ok', tap = function()
         Hub.pop()
         if page.after then page.after() end
     end})
@@ -284,10 +386,10 @@ end
 function draw.confirm(page)
     local w = W()
     UI.box(0, 0, w, H, C.dim)
-    UI.panel(w * 0.5 - 360, 220, 720, 280, 'popup')
-    UI.label(page.text, w * 0.5, 320, 30, 'FONT_BASIC', 'HCENTER', 'VCENTER', 660)
-    UI.button(w * 0.5 - 230, 400, 200, 76, T('yes'), {id = 'yes', icon = 'MENU_YES', color = C.danger, tap = function() Hub.pop() page.yes() end})
-    UI.button(w * 0.5 + 30, 400, 200, 76, T('no'), {id = 'no', icon = 'MENU_NO', tap = Hub.pop})
+    UI.panel(w * 0.5 - 380, 170, 760, 380, 'popup')
+    UI.label(page.text, w * 0.5, 260, 32, 'FONT_BASIC', 'HCENTER', 'VCENTER', 680)
+    UI.choice(w * 0.5 - 130, 400, 120, 'MENU_YES', T('yes'), {id = 'yes', tap = function() Hub.pop() page.yes() end})
+    UI.choice(w * 0.5 + 130, 400, 120, 'MENU_NO', T('no'), {id = 'no', tap = Hub.pop})
 end
 
 function draw.wait(page)
@@ -322,10 +424,15 @@ function Hub.open(menu, page)
     UI.onBack = function() Hub.pop() end
     UI.onWheel = nil
     menu:addChild(screen)
+    if dynamic and dynamic.load then pcall(dynamic.load, 'mainShopAssets') end
 end
 
 function Hub.close()
-    if Hub.screen and Hub.menu then Hub.menu:removeChild(Hub.screen) end
+    for _, p in ipairs(Hub.stack or {}) do if p.leave then p.leave() end end
+    if Hub.screen and Hub.menu then
+        Hub.menu:removeChild(Hub.screen)
+        if dynamic and dynamic.release then pcall(dynamic.release, 'mainShopAssets') end
+    end
     Hub.screen, Hub.menu = nil, nil
     UI.onBack = nil
 end
