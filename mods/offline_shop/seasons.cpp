@@ -3,7 +3,7 @@
 // coins, and levels pay more coins.
 //
 //   Mighty Eagle                          1500 coins
-//   Ham Dunk team levels                   500 (with the Mighty Ball 1000)
+//   Ham Dunk team levels                  1000
 //   Tea Party levels                       500
 //   Ragnahog calendar                     1000 (only before a level's date)
 //   each of 12 hats                        250
@@ -30,8 +30,7 @@ namespace {
 constexpr const char* kPrices = R"(
 local PRICES = {
     mightyeagle = 1500,
-    unlocknbalevels = 500,
-    unlocknbalevelsandball = 1000,
+    unlocknbalevels = 1000,
     unlockteapartylevels = 500,
     unlockragnahoglevels = 1000,
 }
@@ -76,11 +75,22 @@ for id in pairs(PRICES) do priced(id) end
 
 // The shop's hat group: four hats a page, the ones not owned, drawn about as
 // big as the shop's other items.
+//
+// The Ham Dunk team levels: the game hides their pages until they are bought,
+// and its shop group for them (unlocknba) is no longer in getShopItemGroups and
+// has no card in the shop of this version. They get a group with a card of
+// their own, for the levels only (unlocknbalevels), which stays after the
+// purchase and says where the levels are.
 constexpr const char* kShopConfig = R"(
 local HAT_ICON_SIZE = 140
 local groups = getShopItemGroups
 function getShopItemGroups(...)
     local result = groups(...)
+    result[#result + 1] = {name = 'offlineShopNba', topbar_icon = 'SHOP_BASKETBALL_MAIN_TOP', event = 'GOTO_MAIN_TAB',
+                           pages = {{name = 'unlocknba', items = {{id = 'unlocknbalevels', background = 'SHOP_ELEMENT_2',
+                                                                   icon = 'REWARD_NBA', iconScale = 0.75}},
+                                     item_type = 'permanent', show_item_amount = false,
+                                     topbar_icon = 'SHOP_BASKETBALL_MAIN_TOP'}}}
     local pages, page = {}, nil
     for _, hat in ipairs(HATS) do
         if not settingsWrapper:isCompletedQuest(hat.quest) then
@@ -103,15 +113,60 @@ function getShopItemGroups(...)
 end
 )";
 
-// A hat's card once it is owned: the shop's check instead of the price.
+// A hat's or the team levels' card once owned: the shop's check instead of the
+// price. The team levels' card has a title above its ball, which sits lower than
+// the game places icons (a quarter of the card up, where it would touch the top).
 constexpr const char* kShopItem = R"(
-local HAT = {}
-for _, hat in ipairs(HATS) do HAT[hat_product(hat)] = hat end
+local NBA_TITLE = 'NBA Levels'  -- the game's texts are English only
+local NBA_INFO = 'Unlocks the 30 team levels in Ham Dunk (2014)'
+local OWNED = {
+    unlocknbalevels = function() return settingsWrapper:isNBALevelsBought() end,
+}
+for _, hat in ipairs(HATS) do
+    OWNED[hat_product(hat)] = function() return settingsWrapper:isCompletedQuest(hat.quest) end
+end
+local create = CombinedShopGroupItem.createElements
+function CombinedShopGroupItem:createElements(item, ...)
+    local results = {create(self, item, ...)}
+    if item and item.id == 'unlocknbalevels' then
+        local title = ui.Text:new()
+        title.name = 'offlineShopTitle'
+        title:setFont(fonts.getFont('fontHeader'))  -- fontMenu has only digits and x
+        title.text = NBA_TITLE
+        self:addChild(title)
+        local info = ui.Text:new()
+        info.name = 'offlineShopInfo'
+        info:setFont(fonts.getFont('fontHeader'))
+        info.text = NBA_INFO
+        self:addChild(info)
+    end
+    return unpack(results)
+end
+local layout = CombinedShopGroupItem.layout
+function CombinedShopGroupItem:layout(...)
+    local results = {layout(self, ...)}
+    local title = self:getChild('offlineShopTitle')
+    if title then
+        local w, h = Scaling.getSpriteBoundsScaled(self.image)
+        local card_w = res.getSpriteBounds(self.image)
+        local scale = math.min(0.75, 0.85 * card_w / math.max(title:getWidth(), 1))
+        title.scaleX, title.scaleY = scale, scale
+        title.y = -0.36 * h
+        local info = self:getChild('offlineShopInfo')
+        if info then
+            info.scaleX, info.scaleY = 0.6, 0.6
+            info.y = 0.66 * h
+        end
+        local icon = self:getChild('icon')
+        if icon then icon.y = -0.02 * h end
+    end
+    return unpack(results)
+end
 local update = CombinedShopGroupItem.update
 function CombinedShopGroupItem:update(...)
     local results = {update(self, ...)}
-    local hat = HAT[self.name]
-    if hat and not self.offlineShopOwned and settingsWrapper:isCompletedQuest(hat.quest) then
+    local owned = OWNED[self.name]
+    if owned and not self.offlineShopOwned and owned() then
         self.offlineShopOwned = true
         local button = self:getChild('buyButton')
         if button then
@@ -120,32 +175,38 @@ function CombinedShopGroupItem:update(...)
             local check = ui.Image:new()
             check.name = 'offlineShopOwned'
             check:setImage('SHOP_BOUGHT')
-            check.x, check.y = button.x, button.y
             self:addChild(check)
         end
     end
+    -- The card may be laid out after this: the check follows the hidden button.
+    local check = self.offlineShopOwned and self:getChild('offlineShopOwned')
+    local button = check and self:getChild('buyButton')
+    if button then check.x, check.y = button.x, button.y end
     return unpack(results)
 end
 )";
 
-// The shop's top bars space their buttons by each button's width: the hat
-// buttons get the width of the others and their hat a common size.
+// The shop's top bars space their buttons by each button's width: the buttons
+// of the hats and the team levels get the width of the others and a common size.
 constexpr const char* kTopBar = R"(
 local ICON_SIZE = 100  -- about the size of the group icons (SHOP_*_TOP)
-local function hats(button) return (button.name or ''):find('^offlineShopHats') end
+local function added(button)  -- the groups this mod adds
+    local name = button.name or ''
+    return name:find('^offlineShopHats') or name:find('^offlineShopNba')
+end
 local layout = CombinedTopBar.layout
 function CombinedTopBar:layout(...)
     local results = {layout(self, ...)}
     local buttons = self.buttons or {}
     local width
     for _, button in ipairs(buttons) do
-        if not hats(button) then width = button.w break end
+        if not added(button) then width = button.w break end
     end
     width = width or ICON_SIZE
-    local function w(button) return hats(button) and width or button.w end
+    local function w(button) return added(button) and width or button.w end
     local moved
     for i, button in ipairs(buttons) do
-        if hats(button) then
+        if added(button) then
             local scale = math.min(1.2, ICON_SIZE / math.max(button.w or 0, button.h or 0, 1))
             button.scaleX, button.scaleY = scale, scale
             button.x = (-#buttons / 2 + 0.5 + i - 1) * width * self.scaleX * 1.1
@@ -391,7 +452,10 @@ function GameHud:updateNBAPreview(...)
     return unpack(results)
 end
 )";
-// The shop's Mighty Eagle button has a coin image without a sprite.
+// The shop's Mighty Eagle button has a coin image without a sprite. The card
+// shows the bought Mighty Eagle only when created or after a restore: it
+// switches when the Mighty Eagle is bought, as created for an owner (no
+// background, the bought texts in its layout).
 constexpr const char* kEagleItem = R"(
 local create = CombinedShopGroupItemEagle.createElements
 function CombinedShopGroupItemEagle:createElements(...)
@@ -399,6 +463,73 @@ function CombinedShopGroupItemEagle:createElements(...)
     local button = self:getChild('buyButton')
     local coin = button and button:getChild('coin')
     if coin and not coin.image then coin:setImage('CURRENCY_COIN') end
+    self.offlineShopOwned = settingsWrapper:isMightyEagleEnabled() == true
+    return unpack(results)
+end
+local update = CombinedShopGroupItemEagle.update
+function CombinedShopGroupItemEagle:update(...)
+    local results = {update(self, ...)}
+    local owned = settingsWrapper:isMightyEagleEnabled() == true
+    if self.offlineShopOwned ~= nil and owned ~= self.offlineShopOwned then
+        self.offlineShopOwned = owned
+        self:setImage(owned and '' or 'SHOP_ME_BG')
+        self:layout()
+    end
+    return unpack(results)
+end
+)";
+
+// A shop opened for a group (the Mighty Eagle's and Mighty Ball's buttons ask
+// for the Mighty Eagle) shows that group's page. The menu announces the group
+// with an event that has no frame name, which the shop frame ignored, so the
+// shop stayed on the page it was on before.
+constexpr const char* kShopFrame = R"(
+local triggered = CombinedShopFrame.eventTriggered
+function CombinedShopFrame:eventTriggered(event, ...)
+    if event and event.id == events.EID_SCROLLFRAME_ANCHOR_CHANGED and not event.name and event.itemName then
+        for _, group in ipairs(self.groups or {}) do
+            if group:hasPage(event.itemName) then
+                local named = {name = 'combinedShopScrollFrame'}
+                for k, v in pairs(event) do
+                    if k ~= 'name' then named[k] = v end
+                end
+                return triggered(self, named, ...)
+            end
+        end
+    end
+    return triggered(self, event, ...)
+end
+)";
+
+// The episode selection's Ham Dunk card counts the team levels' stars (and the
+// coins, twice the stars, as the game does) only once they are bought; sold for
+// coins, they count from the start, as in game-statistics.
+constexpr const char* kEpisodeButton = R"(
+local entry = EpisodeButton.onEntry
+function EpisodeButton:onEntry(...)
+    local results = {entry(self, ...)}
+    local episode = self.episode and getLocalEpisode(self.episode)
+    if episode and episode.name == 'Ham Dunk' and not settingsWrapper:isNBALevelsBought() then
+        local extra = 0
+        for _, page in ipairs(episode.pages or {}) do
+            if page.free_levels == false and not page.ignoreInThreeStarCalculations then
+                for _, level in ipairs(page.levels or {}) do
+                    if not level.ignoreInThreeStarCalculations then extra = extra + 3 end
+                end
+            end
+        end
+        local stars, max, coins = calculateEpisodeStars(self.episode)
+        if extra > 0 and stars and max then
+            max = max + extra
+            local function show(name, done, total)
+                local text, indicator = self:getChild(name .. 'Text'), self:getChild(name .. 'Indicator')
+                if text then text.text = done .. '/' .. total end
+                if indicator then indicator:setProgress(done, total) end
+            end
+            show('star', stars, max)
+            show('coin', coins or 0, max * 2)
+        end
+    end
     return unpack(results)
 end
 )";
@@ -423,6 +554,8 @@ public:
         append_lua("data/scripts/menus/calendar/NoAccessPopup.lua", icons + kCalendar);
         append_lua("data/scripts/menus/GameHud.lua", icons + kGameHud);
         append_lua("data/scripts/menus/combinedMenu/CombinedShopGroupItemEagle.lua", kEagleItem);
+        append_lua("data/scripts/menus/combinedMenu/CombinedShopFrame.lua", kShopFrame);
+        append_lua("data/scripts/menus/EpisodeButton.lua", kEpisodeButton);
     }
 };
 
