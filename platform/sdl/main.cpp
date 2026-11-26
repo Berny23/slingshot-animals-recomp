@@ -9,7 +9,7 @@
 //   build extracted it). The mods enabled are the build's default ones (SLINGSHOT_DEFAULT_MODS), or instead those given with
 //   --mod or SLINGSHOT_MODS=name,name ("all" for every mod, "default" for those on by default);
 //   --enable-mod adds one, --disable-mod takes one away, --no-mods all of them.
-//   --mod-option passes a setting to a mod (see README.md for each mod's). The device locale is --locale, else
+//   --mod-option passes a setting to a mod (see docs/MODS.md for each mod's). The device locale is --locale, else
 //   SLINGSHOT_LOCALE, else the host's (LC_ALL, LC_MESSAGES, LANG).
 //   --data puts the saves and everything else the game writes into <dir> instead of
 //   the system's place for app data.
