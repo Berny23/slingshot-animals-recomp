@@ -12,6 +12,8 @@ namespace recomp {
 // Host directory that holds the guest's private data (saves, settings).
 void vfs_set_root(const std::string& root);
 const std::string& vfs_root();
+// The root without vfs_set_root: $XDG_DATA_HOME/slingshot-animals-recomp/<game id>.
+std::string vfs_default_root();
 // Host path for a guest path, or an empty string if the path is not visible.
 std::string vfs_map(const char* guest_path);
 

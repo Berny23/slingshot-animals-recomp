@@ -604,7 +604,8 @@ void Window::update_cache_size() {
     QPointer<Window> self(this);
     std::thread([self] {
         const QString unpacked = unpacked_app_dir();
-        const qint64 size = tree_size(cache_dir()) + (unpacked.isEmpty() ? 0 : tree_size(QFileInfo(unpacked).path()));
+        qint64 size = tree_size(cache_dir()) + (unpacked.isEmpty() ? 0 : tree_size(QFileInfo(unpacked).path()));
+        for (const QString& dir : legacy_cache_dirs()) size += tree_size(dir);
         QMetaObject::invokeMethod(qApp, [self, size] {
             if (!self) return;
             self->clear_cache_->setText("Clear cache (" + format_size(size) + ")");
@@ -627,6 +628,7 @@ void Window::clear_cache() {
     if (answer != QMessageBox::Yes) return;
     QApplication::setOverrideCursor(Qt::WaitCursor);
     QDir(cache_dir()).removeRecursively();
+    for (const QString& dir : legacy_cache_dirs()) QDir(dir).removeRecursively();
     remove_unpacked_app();
     QApplication::restoreOverrideCursor();
     update_cache_size();

@@ -27,6 +27,21 @@ QString data_root();
 // The cache somewhere else than <data root>/cache (a shorter path to it).
 void set_cache_dir(const QString& dir);
 
+// The folder the user keeps the builder in: the single-file Windows release's
+// (SLINGSHOT_BUILDER_HOME, set by tools/builder/launcher), the AppImage's, the
+// macOS app's, else the executable's.
+QString home_dir();
+// The default data root: <home>/slingshot-builder-data, if that can be written;
+// else the system's places as before (empty data root). The cache from the
+// system's place is moved there if it is on the same drive, the Android key
+// copied once.
+void use_portable_data();
+// Windows: a data root's cache in a long path is reached through a short junction.
+void shorten_cache();
+// The system's cache and unpacked builder of a portable builder's earlier
+// versions (empty if not portable or not there); Clear cache deletes them too.
+QStringList legacy_cache_dirs();
+
 // Downloaded tools and build directories; "Clear cache" deletes it. Short on
 // Windows (path length limit of some tools).
 QString cache_dir();
@@ -34,8 +49,8 @@ QString cache_dir();
 // Where the build log goes: the cache, or <data root>/logs.
 QString log_dir();
 
-// The Windows single-file release unpacks the builder into
-// %LOCALAPPDATA%\slingshot\app\<version>: that folder when this builder runs
+// The Windows single-file release unpacks the builder into <data root>\app\<version>
+// (%LOCALAPPDATA%\slingshot\app\<version> if not portable): that folder when this builder runs
 // from it, else empty. Clear cache deletes it too.
 QString unpacked_app_dir();
 // Deletes the other unpacked versions now and this one once the app has ended

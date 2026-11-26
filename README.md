@@ -25,7 +25,9 @@ Unofficial static recompilation of Rovio's old Android *Angry Birds* games. Each
     - **Android**: Select *Build Android APK only...*, choose a location and wait for building to finish. Then copy the generated APK file onto your phone and install it. Advanced users can alternatively install via ADB directly on a connected phone.
     - **Nintendo Switch (homebrew)**: Select *Build for Nintendo Switch (homebrew)...* wait for building to finish. Then copy the `.nro` file into `switch/` on your SD card and start the game from the Homebrew Menu.
 
-To uninstall the games on Linux, just delete them under `~/.local/lib/slingshot-animals-recomp/` and their menu entries at `~/.local/share/applications/slingshot-<id>.desktop`.
+The builder keeps its downloads and build files in `slingshot-builder-data/` next to itself, each game its saves in `saves/` next to its executable, so they move with their folder.
+
+To uninstall the games on Linux, just delete them under `~/.local/lib/slingshot-animals-recomp/` (their saves are in it) and their menu entries at `~/.local/share/applications/slingshot-<id>.desktop`.
 
 ## Features
 
@@ -81,10 +83,10 @@ APKs with the `armeabi-v7a` library:
 
 The build checks each library's SHA-256.
 
-Star Wars II downloads its sounds and theme images from a server that is gone; without them it has no music and draws placeholder backgrounds. For the originals, take `files/assets_service/` from a device installation (`/data/data/com.rovio.angrybirdsstarwarsii.ads/`). The builder asks for it as a ZIP file or folder when building the game (`-DGAME_EXTRA_starwars2=<zip or folder>` in a CMake build). Alternatively, copy the folder into the game's [save folder](#run), on Linux:
+Star Wars II downloads its sounds and theme images from a server that is gone; without them it has no music and draws placeholder backgrounds. For the originals, take `files/assets_service/` from a device installation (`/data/data/com.rovio.angrybirdsstarwarsii.ads/`). The builder asks for it as a ZIP file or folder when building the game (`-DGAME_EXTRA_starwars2=<zip or folder>` in a CMake build). Alternatively, copy the folder into the game's [save folder](#run):
 
 ```
-~/.local/share/slingshot-animals-recomp/starwars2/internal/files/assets_service/
+saves/internal/files/assets_service/
 ├── 16000hz-16bit-mono/    music/ and sfx/ (*.mp3)
 └── images/                android/ (THEME_*.pvr, THEME_*.dat)
 ```
@@ -130,7 +132,7 @@ build/bin/slingshot-<id> [options] [game-dir]
 | `--data <dir>` | Keep the saves in `<dir>` instead of the folder below |
 | `--dump-scripts <dir>` | Write the game's scripts and configs out decrypted |
 
-Saves are in `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`) on Linux, `%APPDATA%\slingshot-animals-recomp\<id>\` on Windows, `~/Library/Application Support/slingshot-animals-recomp/<id>/` on macOS and `sdmc:/switch/slingshot-animals-recomp/<id>/` on the Switch; on Android `Android/media/<package>.recomp/<id>/` on the device's storage (saves of earlier versions are moved there on the first start; uninstalling deletes them). They are encrypted by the game; copy the folder while the game is not running to back them up.
+Saves are in `saves/` next to the game's executable on Linux and Windows. Saves from where earlier versions kept them, `~/.local/share/slingshot-animals-recomp/<id>/` (or `$XDG_DATA_HOME`) and `%APPDATA%\slingshot-animals-recomp\<id>\`, are copied there on the first start; where the game's folder cannot be written, they stay in those places. On macOS they are in `~/Library/Application Support/slingshot-animals-recomp/<id>/`, on the Switch in `sdmc:/switch/slingshot-animals-recomp/<id>/`, on Android in `Android/media/<package>.recomp/<id>/` on the device's storage (saves of earlier versions are moved there on the first start; uninstalling deletes them). They are encrypted by the game; copy the folder while the game is not running to back them up.
 
 ## Modding
 

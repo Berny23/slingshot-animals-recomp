@@ -2,7 +2,6 @@
 #include "recomplauncher.hpp"
 
 #include <QCoreApplication>
-#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
@@ -59,7 +58,7 @@ void print_error(const QString& text) {
 QString game_folder(const QString& id) { return data_root() + "/games/" + id; }
 QString save_folder(const QString& id) { return data_root() + "/saves/" + id; }
 
-// Where the game keeps its saves without --data (platform/sdl/main.cpp, runtime/hle/libc/vfs.cpp).
+// Where the game kept its saves without --data before saves/ next to it (platform/sdl/main.cpp).
 QString system_save_folder(const QString& id) {
 #if defined(Q_OS_WIN)
     return qEnvironmentVariable("APPDATA") + "/slingshot-animals-recomp/" + id;
@@ -68,6 +67,17 @@ QString system_save_folder(const QString& id) {
 #else
     const QString xdg = qEnvironmentVariable("XDG_DATA_HOME");
     return (xdg.isEmpty() ? QDir::homePath() + "/.local/share" : xdg) + "/slingshot-animals-recomp/" + id;
+#endif
+}
+
+// The saves of a game the builder installed (saves/ next to it, install.cpp).
+QString installed_save_folder(const QString& id) {
+#if defined(Q_OS_WIN)
+    return qEnvironmentVariable("LOCALAPPDATA") + "/Programs/slingshot-animals-recomp/" + id + "/saves";
+#elif defined(Q_OS_MACOS)
+    return {};
+#else
+    return QDir::homePath() + "/.local/lib/slingshot-animals-recomp/" + id + "/saves";
 #endif
 }
 
@@ -81,34 +91,6 @@ bool copy_folder(const QString& from, const QString& to) {
     }
     return QDir().mkpath(to);
 }
-
-#ifdef Q_OS_WIN
-// Windows limits most programs to paths of 260 characters, and the build's
-// deepest files (the dependencies' sources) are about 190 below the cache. A
-// cache in a long library folder is reached through a short junction instead:
-// %LOCALAPPDATA%\slingshot\l\<hash>. Junctions whose folder is gone are removed.
-constexpr int kLongCache = 60;
-
-void use_short_cache() {
-    const QString real = QDir::cleanPath(data_root() + "/cache");
-    const QString links = QDir::cleanPath(qEnvironmentVariable("LOCALAPPDATA", QDir::homePath()) + "/slingshot/l");
-    for (const QFileInfo& f : QDir(links).entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::System))
-        if (f.isJunction() && !QFileInfo::exists(f.junctionTarget())) QDir().rmdir(f.absoluteFilePath());
-    if (real.size() <= kLongCache) return;
-    QDir().mkpath(real);
-    const QString hash = QCryptographicHash::hash(real.toLower().toUtf8(), QCryptographicHash::Sha256).toHex().left(8);
-    const QString link = links + "/" + hash;
-    if (!QFileInfo(link).isJunction()) {
-        QDir().mkpath(links);
-        QProcess p;
-        p.setProgram("cmd.exe");
-        p.setNativeArguments(QString("/d /c mklink /J \"%1\" \"%2\"").arg(QDir::toNativeSeparators(link), QDir::toNativeSeparators(real)));
-        p.start();
-        p.waitForFinished(-1);
-    }
-    if (QFileInfo(link).isJunction()) set_cache_dir(link);
-}
-#endif
 
 // What a built game was made from: the builder's version, the game and its extra files.
 QByteArray stamp(const Game& game, const QString& extra) {
@@ -152,9 +134,7 @@ int prepare(const QStringList& apks, const QString& extra) {
         }
         found.push_back(*game);
     }
-#ifdef Q_OS_WIN
-    use_short_cache();
-#endif
+    shorten_cache();
     // The saves' folder exists from the setup on (the launcher looks for it); each game's own
     // folder only once it is played, which copies saves from before (play).
     QDir().mkpath(data_root() + "/saves");
@@ -229,7 +209,8 @@ int play(const QString& id, QStringList game_args) {
     // The saves go with the launcher's folder; saves the game had before are copied there once.
     const QString saves = save_folder(id);
     if (!QFileInfo::exists(saves)) {
-        const QString before = system_save_folder(id);
+        QString before = installed_save_folder(id);
+        if (!QFileInfo(before).isDir()) before = system_save_folder(id);
         if (QFileInfo(before).isDir() && !copy_folder(before, saves))
             print_error("Cannot copy the saves from " + QDir::toNativeSeparators(before));
     }

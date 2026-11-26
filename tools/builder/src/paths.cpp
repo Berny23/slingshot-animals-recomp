@@ -2,6 +2,7 @@
 #include "paths.hpp"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -42,12 +43,23 @@ QString data_root() { return g_data_root; }
 
 void set_cache_dir(const QString& dir) { g_cache_dir = dir; }
 
+namespace {
+// Where the Windows launcher unpacks the builder.
+QStringList unpacked_apps_dirs() {
+    QStringList dirs;
+    if (!g_data_root.isEmpty()) dirs << g_data_root + "/app";
+    dirs << QDir::cleanPath(qEnvironmentVariable("LOCALAPPDATA") + "/slingshot/app");
+    return dirs;
+}
+}  // namespace
+
 QString unpacked_app_dir() {
 #ifdef Q_OS_WIN
-    const QString apps = QDir::cleanPath(qEnvironmentVariable("LOCALAPPDATA") + "/slingshot/app");
     const QString app = QDir::cleanPath(QCoreApplication::applicationDirPath());
-    if (!app.startsWith(apps + "/", Qt::CaseInsensitive)) return {};
-    return apps + "/" + app.mid(apps.size() + 1).section('/', 0, 0);  // the version folder
+    for (const QString& apps : unpacked_apps_dirs())
+        if (app.startsWith(apps + "/", Qt::CaseInsensitive))
+            return apps + "/" + app.mid(apps.size() + 1).section('/', 0, 0);  // the version folder
+    return {};
 #else
     return {};
 #endif
@@ -76,27 +88,118 @@ void finish_unpacked_app_removal() {
 #endif
 }
 
-QString cache_dir() {
-    if (!g_cache_dir.isEmpty()) return g_cache_dir;
-    if (!g_data_root.isEmpty()) return g_data_root + "/cache";
+QString home_dir() {
+    const QString launcher = qEnvironmentVariable("SLINGSHOT_BUILDER_HOME");
+    if (!launcher.isEmpty()) return QDir::cleanPath(launcher);
+    const QString appimage = qEnvironmentVariable("APPIMAGE");
+    if (!appimage.isEmpty()) return QFileInfo(appimage).absolutePath();
+    QString app = QDir::cleanPath(QCoreApplication::applicationDirPath());
+#ifdef Q_OS_MACOS
+    if (app.endsWith(".app/Contents/MacOS")) return QFileInfo(app.chopped(int(sizeof("/Contents/MacOS") - 1))).path();
+#endif
+    return app;
+}
+
+namespace {
+
+// The places without a data root.
+QString system_cache_dir() {
 #ifdef Q_OS_WIN
-    const QString base = qEnvironmentVariable("LOCALAPPDATA", QDir::homePath());
-    return QDir::cleanPath(base + "/slingshot/c");
+    return QDir::cleanPath(qEnvironmentVariable("LOCALAPPDATA", QDir::homePath()) + "/slingshot/c");
 #else
     return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/slingshot-builder";
 #endif
+}
+
+QString system_data_dir() {
+#ifdef Q_OS_WIN
+    return QDir::cleanPath(qEnvironmentVariable("LOCALAPPDATA", QDir::homePath()) + "/slingshot/data");
+#else
+    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/slingshot-builder";
+#endif
+}
+
+bool writable_dir(const QString& dir) {
+    if (!QDir().mkpath(dir)) return false;
+    QFile probe(dir + "/.write-test");
+    const bool ok = probe.open(QIODevice::WriteOnly);
+    probe.close();
+    probe.remove();
+    return ok;
+}
+
+}  // namespace
+
+void use_portable_data() {
+    if (!g_data_root.isEmpty()) return;
+    const QString dir = QDir::cleanPath(QDir(home_dir()).filePath("slingshot-builder-data"));
+    if (!writable_dir(dir)) return;
+    set_data_root(dir);
+    // The cache from before is moved where that is a rename (the same drive); else
+    // Clear cache deletes it. Build directories start again (Job::reset_if_moved).
+    const QString cache = g_data_root + "/cache";
+    if (!QFileInfo::exists(cache) && QFileInfo::exists(system_cache_dir())) QDir().rename(system_cache_dir(), cache);
+    const QString key = "/android.keystore";
+    if (!QFileInfo::exists(data_dir() + key) && QFileInfo::exists(system_data_dir() + key)) {
+        QDir().mkpath(data_dir());
+        QFile::copy(system_data_dir() + key, data_dir() + key);
+    }
+    shorten_cache();
+}
+
+void shorten_cache() {
+#ifdef Q_OS_WIN
+    // Windows limits most programs to paths of 260 characters, and the build's
+    // deepest files (the dependencies' sources) are about 190 below the cache. A
+    // cache in a long path is reached through a short junction instead:
+    // %LOCALAPPDATA%\slingshot\l\<hash>. Junctions whose folder is gone are removed.
+    constexpr int kLongCache = 60;
+    if (g_data_root.isEmpty()) return;
+    const QString real = QDir::cleanPath(g_data_root + "/cache");
+    const QString links = QDir::cleanPath(qEnvironmentVariable("LOCALAPPDATA", QDir::homePath()) + "/slingshot/l");
+    for (const QFileInfo& f : QDir(links).entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::System))
+        if (f.isJunction() && !QFileInfo::exists(f.junctionTarget())) QDir().rmdir(f.absoluteFilePath());
+    if (real.size() <= kLongCache) return;
+    QDir().mkpath(real);
+    const QString hash = QCryptographicHash::hash(real.toLower().toUtf8(), QCryptographicHash::Sha256).toHex().left(8);
+    const QString link = links + "/" + hash;
+    if (!QFileInfo(link).isJunction()) {
+        QDir().mkpath(links);
+        QProcess p;
+        p.setProgram("cmd.exe");
+        p.setNativeArguments(QString("/d /c mklink /J \"%1\" \"%2\"").arg(QDir::toNativeSeparators(link), QDir::toNativeSeparators(real)));
+        p.start();
+        p.waitForFinished(-1);
+    }
+    if (QFileInfo(link).isJunction()) set_cache_dir(link);
+#endif
+}
+
+QStringList legacy_cache_dirs() {
+    QStringList dirs;
+    if (g_data_root.isEmpty()) return dirs;
+    QStringList candidates{system_cache_dir()};
+#ifdef Q_OS_WIN
+    candidates << QDir::cleanPath(qEnvironmentVariable("LOCALAPPDATA") + "/slingshot/app");
+#endif
+    const QString own_app = unpacked_app_dir();
+    for (const QString& d : candidates)
+        if (QFileInfo::exists(d) && (own_app.isEmpty() || !own_app.startsWith(d + "/", Qt::CaseInsensitive)))
+            dirs << d;
+    return dirs;
+}
+
+QString cache_dir() {
+    if (!g_cache_dir.isEmpty()) return g_cache_dir;
+    if (!g_data_root.isEmpty()) return g_data_root + "/cache";
+    return system_cache_dir();
 }
 
 QString log_dir() { return g_data_root.isEmpty() ? cache_dir() : g_data_root + "/logs"; }
 
 QString data_dir() {
     if (!g_data_root.isEmpty()) return g_data_root + "/builder";
-#ifdef Q_OS_WIN
-    const QString base = qEnvironmentVariable("LOCALAPPDATA", QDir::homePath());
-    return QDir::cleanPath(base + "/slingshot/data");
-#else
-    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/slingshot-builder";
-#endif
+    return system_data_dir();
 }
 
 namespace {

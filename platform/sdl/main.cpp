@@ -211,6 +211,47 @@ bool window_encodes_srgb() {
 }
 #endif
 
+// Whether every regular file below from has a copy of the same size below to.
+bool same_files(const std::filesystem::path& from, const std::filesystem::path& to) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(from, ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const fs::path copy = to / fs::relative(it->path(), from, ec);
+        if (ec) return false;
+        const auto size = it->file_size(ec);
+        if (ec || fs::file_size(copy, ec) != size || ec) return false;
+    }
+    return !ec;
+}
+
+// The saves' folder `dir`. Saves of earlier versions in `old` are copied there first
+// if `dir` does not exist yet: into <dir>.moving, which is renamed to <dir> once every
+// file is there; with `remove_old` <old> is removed then. If `dir` cannot be made or
+// the copy fails, the saves stay in <old>.
+[[maybe_unused]] std::string adopt_saves(const std::string& old, const std::string& dir, bool remove_old) {
+    namespace fs = std::filesystem;
+    const fs::path moving = dir + ".moving";
+    std::error_code ec;
+    fs::remove_all(moving, ec);  // an interrupted copy
+    if (fs::exists(dir, ec) || !fs::is_directory(old, ec) || fs::is_empty(old, ec)) {
+        if (!fs::is_directory(dir, ec)) fs::create_directories(dir, ec);
+        return fs::is_directory(dir, ec) ? dir : old;
+    }
+    ec.clear();
+    fs::copy(old, moving, fs::copy_options::recursive, ec);
+    if (!ec && same_files(old, moving)) fs::rename(moving, dir, ec);
+    else if (!ec) ec = std::make_error_code(std::errc::io_error);
+    if (ec) {
+        std::fprintf(stderr, "host: cannot copy the saves to %s: %s\n", dir.c_str(), ec.message().c_str());
+        fs::remove_all(moving, ec);
+        return old;
+    }
+    if (remove_old) fs::remove_all(old, ec);
+    std::fprintf(stderr, "host: copied the saves from %s to %s\n", old.c_str(), dir.c_str());
+    return dir;
+}
+
 #ifdef __ANDROID__
 // The APK carries game/ (library, assets, icon) and game/files.txt, the list of its
 // files. The first start after an install or update copies them to internal storage,
@@ -276,50 +317,16 @@ std::string android_media_dir() {
     return path;
 }
 
-// Whether every regular file below from has a copy of the same size below to.
-bool same_files(const std::filesystem::path& from, const std::filesystem::path& to) {
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    for (fs::recursive_directory_iterator it(from, ec), end; !ec && it != end; it.increment(ec)) {
-        if (!it->is_regular_file(ec)) continue;
-        const fs::path copy = to / fs::relative(it->path(), from, ec);
-        if (ec) return false;
-        const auto size = it->file_size(ec);
-        if (ec || fs::file_size(copy, ec) != size || ec) return false;
-    }
-    return !ec;
-}
-
-// The saves' folder: <media>/<id>. Saves of earlier versions, in the app's internal
-// storage (<old>), are copied there first: into <id>.moving, which is renamed to <id>
-// once every file is there, then <old> is removed. Without shared storage, or if the
-// copy fails, the saves stay in <old>.
+// The saves' folder: <media>/<id>, saves of earlier versions in the app's internal
+// storage (<old>) moved there (see adopt_saves). Without shared storage <old>.
 std::string android_save_dir(const std::string& old) {
-    namespace fs = std::filesystem;
     const std::string media = android_media_dir();
     if (media.empty()) return old;
-    const fs::path dir = fs::path(media) / recomp::game.id;
-    const fs::path moving = dir.string() + ".moving";
     std::error_code ec;
-    fs::create_directories(media, ec);
-    if (!fs::exists(fs::path(media) / ".nomedia", ec)) SDL_SaveFile((fs::path(media) / ".nomedia").string().c_str(), "", 0);
-    fs::remove_all(moving, ec);  // an interrupted copy
-    if (fs::exists(dir, ec) || !fs::is_directory(old, ec) || fs::is_empty(old, ec)) {
-        if (!fs::is_directory(dir, ec)) fs::create_directories(dir, ec);
-        return fs::is_directory(dir, ec) ? dir.string() : old;
-    }
-    ec.clear();
-    fs::copy(old, moving, fs::copy_options::recursive, ec);
-    if (!ec && same_files(old, moving)) fs::rename(moving, dir, ec);
-    else if (!ec) ec = std::make_error_code(std::errc::io_error);
-    if (ec) {
-        std::fprintf(stderr, "host: cannot move the saves to %s: %s\n", dir.string().c_str(), ec.message().c_str());
-        fs::remove_all(moving, ec);
-        return old;
-    }
-    fs::remove_all(old, ec);
-    std::fprintf(stderr, "host: moved the saves to %s\n", dir.string().c_str());
-    return dir.string();
+    std::filesystem::create_directories(media, ec);
+    const std::string nomedia = (std::filesystem::path(media) / ".nomedia").string();
+    if (!std::filesystem::exists(nomedia, ec)) SDL_SaveFile(nomedia.c_str(), "", 0);
+    return adopt_saves(old, (std::filesystem::path(media) / recomp::game.id).string(), true);
 }
 
 // DeviceInfoWrapper's values: Display.getRealMetrics (the whole screen, system bars
@@ -566,19 +573,34 @@ int run(int argc, char** argv) {
     std::vector<std::unique_ptr<slingshot::Mod>> mods;
     if (!slingshot::load_mods(opt.mods, mods)) return 1;
     recomp::vfs_set_asset_root(opt.game_dir + "/assets");
-#if !defined(__linux__) || defined(__ANDROID__)
     // Saves: the system's place for app data (on Linux $XDG_DATA_HOME, the runtime's default).
     // On Android Android/media/<package>, reachable from file managers and over USB.
+    // An installed game on Windows and Linux keeps them in saves/ next to the executable,
+    // so its folder holds everything; the system's place is where they were before.
+    std::string root;
+#ifdef _WIN32
+    // SDL_GetPrefPath's folder, without making it.
+    if (const char* appdata = std::getenv("APPDATA"); appdata && *appdata)
+        root = std::string(appdata) + "\\slingshot-animals-recomp\\" + recomp::game.id;
+#elif !defined(__linux__) || defined(__ANDROID__)
     if (char* pref = SDL_GetPrefPath(nullptr, "slingshot-animals-recomp")) {
-        std::string root = std::string(pref) + recomp::game.id;
+        root = std::string(pref) + recomp::game.id;
         SDL_free(pref);
-#ifdef __ANDROID__
-        if (opt.data_dir.empty()) root = android_save_dir(root);
+    }
+#else
+    root = recomp::vfs_default_root();
 #endif
-        recomp::vfs_set_root(root);
+#ifdef __ANDROID__
+    if (opt.data_dir.empty() && !root.empty()) root = android_save_dir(root);
+#elif defined(_WIN32) || defined(__linux__)
+    if (const char* base = SDL_GetBasePath(); base && opt.data_dir.empty() && !root.empty()) {
+        std::error_code ec;
+        if (std::filesystem::equivalent(opt.game_dir, std::string(base) + "game", ec))
+            root = adopt_saves(root, std::string(base) + "saves", false);
     }
 #endif
-    if (!opt.data_dir.empty()) recomp::vfs_set_root(opt.data_dir);
+    if (!opt.data_dir.empty()) root = opt.data_dir;
+    if (!root.empty()) recomp::vfs_set_root(root);
     recomp::java::set_locale(recomp::java::parse_locale(opt.locale.empty() ? host_locale() : opt.locale));
 
     // The identifier matches the installed slingshot-<id>.desktop (the taskbar icon on Wayland).

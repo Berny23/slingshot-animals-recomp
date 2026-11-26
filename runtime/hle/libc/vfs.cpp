@@ -28,16 +28,16 @@ namespace {
 std::string g_root;
 std::string g_asset_root;
 
-std::string default_root() {
+bool starts_with(std::string_view s, std::string_view p) { return s.substr(0, p.size()) == p; }
+
+}  // namespace
+
+std::string vfs_default_root() {
     const std::string dir = std::string("/slingshot-animals-recomp/") + game.id;
     if (const char* x = std::getenv("XDG_DATA_HOME"); x && *x) return x + dir;
     if (const char* h = std::getenv("HOME"); h && *h) return h + std::string("/.local/share") + dir;
     return std::string("./userdata/") + game.id;
 }
-
-bool starts_with(std::string_view s, std::string_view p) { return s.substr(0, p.size()) == p; }
-
-}  // namespace
 
 void vfs_set_root(const std::string& root) { g_root = root; }
 void vfs_set_asset_root(const std::string& dir) { g_asset_root = dir; }
@@ -105,7 +105,7 @@ std::optional<std::string> vfs_read_virtual_file(const char* guest_path) {
 
 const std::string& vfs_root() {
     static bool created = false;
-    if (g_root.empty()) g_root = default_root();
+    if (g_root.empty()) g_root = vfs_default_root();
     if (!created) {
         // What Android creates when the app is installed.
         std::error_code ec;

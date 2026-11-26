@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The single-file Windows release: this program with the builder's folder
 // appended as a zip (cat launcher.exe builder.zip > Slingshot-Builder.exe).
-// It unpacks the folder once per version into %LOCALAPPDATA%\slingshot\app\
-// and starts the builder from there with the same arguments; a small window
-// shows the progress meanwhile.
+// It unpacks the folder once per version into slingshot-builder-data\app\ next
+// to itself (%LOCALAPPDATA%\slingshot\app\ where that cannot be written or the
+// path is too long) and starts the builder from there with the same arguments
+// and SLINGSHOT_BUILDER_HOME set to its own folder; a small window shows the
+// progress meanwhile.
 #include <windows.h>
 #include <commctrl.h>
 
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include "sha256.hpp"
 #include "zip.hpp"
@@ -64,6 +67,17 @@ fs::path program_dir(const fs::path& dir) {
     for (const auto& d : fs::directory_iterator(dir, ec))
         if (d.is_directory(ec) && fs::exists(d.path() / kProgram, ec)) return d.path();
     return {};
+}
+
+// Whether files can be made in dir (made if missing).
+bool writable_dir(const fs::path& dir) {
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const fs::path probe = dir / L".write-test";
+    HANDLE f = CreateFileW(probe.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    CloseHandle(f);
+    return true;
 }
 
 // "Unpacking…" with a progress bar.
@@ -139,7 +153,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     wchar_t local[MAX_PATH];
     const DWORD m = GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
     if (m == 0 || m >= MAX_PATH) return fail(L"LOCALAPPDATA is not set.");
-    const fs::path apps = fs::path(local) / L"slingshot" / L"app";
+    const fs::path system_apps = fs::path(local) / L"slingshot" / L"app";
+    // The unpacked files are up to about 100 characters below the version folder.
+    const fs::path home = fs::path(self).parent_path();
+    const fs::path portable_apps = home / L"slingshot-builder-data" / L"app";
+    const bool portable = portable_apps.wstring().size() <= 130 && writable_dir(portable_apps);
+    const fs::path apps = portable ? portable_apps : system_apps;
+    SetEnvironmentVariableW(L"SLINGSHOT_BUILDER_HOME", home.c_str());
     const fs::path dir = apps / payload_id(zip);
     const fs::path done = dir / L".complete";
 
@@ -169,10 +189,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             return fail(L"Cannot unpack Slingshot Builder into " + dir.wstring());
         }
         fs::remove_all(tmp, ec);
-        // Older versions are no longer needed.
-        for (const auto& d : fs::directory_iterator(apps, ec))
-            if (d.path() != dir && d.path().filename().wstring().find(L".tmp") == std::wstring::npos)
-                fs::remove_all(d.path(), ec);
+        // Older versions are no longer needed, nor those unpacked before the portable folder.
+        std::vector<fs::path> folders{apps};
+        if (portable) folders.push_back(system_apps);
+        for (const fs::path& folder : folders) {
+            for (const auto& d : fs::directory_iterator(folder, ec))
+                if (d.path() != dir && d.path().filename().wstring().find(L".tmp") == std::wstring::npos)
+                    fs::remove_all(d.path(), ec);
+        }
     }
 
     const fs::path bin = program_dir(dir);

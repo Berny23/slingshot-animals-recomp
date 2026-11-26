@@ -92,6 +92,7 @@ int main(int argc, char** argv) {
         if (std::string(argv[i]) == "--build") {
             QCoreApplication app(argc, argv);
             app.setApplicationName("slingshot-builder");
+            builder::use_portable_data();
             return run_cli(app);
         }
     }
@@ -126,6 +127,7 @@ int main(int argc, char** argv) {
     app.setApplicationDisplayName("Slingshot Builder");
     app.setDesktopFileName("slingshot-builder");
     app.setWindowIcon(QIcon(":/builder.svg"));
+    builder::use_portable_data();
     builder::Window window;
     window.show();
     // An APK given on the command line (options such as RecompLauncher's --data= are not one)

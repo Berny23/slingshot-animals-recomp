@@ -141,7 +141,8 @@ QString install(const BuiltGame& b, QString& error) {
     const QString link = menu + "/" + b.game.title + ".lnk";
     QFile::remove(link);
     QFile::link(exe, link);
-    // "Installed apps" entry; uninstalling removes the folder, shortcut and entry (saves stay).
+    // "Installed apps" entry; uninstalling removes the game, shortcut and entry. The saves
+    // stay (saves/ in the folder, which is removed when empty).
     const QString key = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\slingshot-" + b.game.id;
     QSettings reg(key, QSettings::NativeFormat);
     const QString native_base = QDir::toNativeSeparators(base);
@@ -153,8 +154,10 @@ QString install(const BuiltGame& b, QString& error) {
     reg.setValue("NoModify", 1);
     reg.setValue("NoRepair", 1);
     reg.setValue("UninstallString",
-                 QString("cmd.exe /c rmdir /s /q \"%1\" & del /q \"%2\" & reg delete \"%3\" /f")
-                     .arg(native_base, QDir::toNativeSeparators(link), QString(key).replace("HKEY_CURRENT_USER", "HKCU")));
+                 QString("cmd.exe /c del /q \"%1\\%2\" \"%1\\libEGL.dll\" \"%1\\libGLESv2.dll\" & rmdir /s /q \"%1\\game\" & "
+                         "rmdir \"%1\" & del /q \"%3\" & reg delete \"%4\" /f")
+                     .arg(native_base, exe_name(b), QDir::toNativeSeparators(link),
+                          QString(key).replace("HKEY_CURRENT_USER", "HKCU")));
     reg.sync();
     return base;
 #else
