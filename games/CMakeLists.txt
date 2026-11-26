@@ -93,6 +93,11 @@ function(slingshot_switch_nro id)
     add_custom_target(slingshot-${id}-nro ALL DEPENDS "${nro}")
 endfunction()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    include(CheckLinkerFlag)
+    check_linker_flag(CXX "-Wl,--exclude-libs,ALL" SLINGSHOT_LINKER_EXCLUDE_LIBS)
+endif()
+
 file(GLOB game_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*/game.json")
 set(built_games "")
 foreach(game_file IN LISTS game_files)
@@ -236,13 +241,16 @@ foreach(game_file IN LISTS game_files)
     else()
         add_executable(${exe} ${sources})
         set_target_properties(${exe} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-        if(NOT NINTENDO_SWITCH)
-            set_target_properties(${exe} PROPERTIES ENABLE_EXPORTS ON)  # symbol names in crash backtraces
-        endif()
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            # Keep the static libraries' symbols (HarfBuzz, FreeType, SDL3) private: exported, they
-            # would replace the system's copies in libraries such as GTK that libdecor loads.
-            target_link_options(${exe} PRIVATE -Wl,--exclude-libs,ALL)
+            # Symbol names in crash backtraces, but not the static libraries' symbols (HarfBuzz,
+            # FreeType, SDL3): exported, they would replace the system's copies in libraries such
+            # as GTK that libdecor loads. Without --exclude-libs (Zig's linker) nothing is exported.
+            if(SLINGSHOT_LINKER_EXCLUDE_LIBS)
+                set_target_properties(${exe} PROPERTIES ENABLE_EXPORTS ON)
+                target_link_options(${exe} PRIVATE -Wl,--exclude-libs,ALL)
+            endif()
+        elseif(NOT NINTENDO_SWITCH)
+            set_target_properties(${exe} PROPERTIES ENABLE_EXPORTS ON)  # symbol names in crash backtraces
         endif()
     endif()
     target_link_libraries(${exe} PRIVATE slingshot_host recomp_runtime recomp_game_code_${id})
