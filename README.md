@@ -35,8 +35,6 @@ Unofficial static recompilation of Rovio's old Android *Angry Birds* slingshot g
     - **Android**: Select *Build Android APK only...*, choose a location and wait for building to finish. Then copy the generated APK file onto your phone and install it. Advanced users can alternatively install via ADB directly on a connected phone.
     - **Nintendo Switch (homebrew)**: Select *Build for Nintendo Switch (homebrew)...* wait for building to finish. Then copy the `.nro` file into `switch/` on your SD card and start the game from the Homebrew Menu.
 
-Saves are located next to the game files, on Android in the app's `media` directory.
-
 Uninstall on Linux: Delete its folder in `~/.local/lib/slingshot-animals-recomp/` (saves are there too) and `~/.local/share/applications/slingshot-<id>.desktop`.
 
 ## Supported versions
